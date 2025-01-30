@@ -104,7 +104,7 @@ bash ./scripts/train_tiny_zero.sh
 ## Citation
 ```
 @misc{tinyzero,
-author       = {Jiayi Pan and Junjie Zhang and Xingyao Wang and Lifan Yuan},
+author       = {Jiayi Pan and Junjie Zhang and Xingyao Wang and Lifan Yuan and Hao Peng and Alane Suhr},
 title        = {TinyZero},
 howpublished = {https://github.com/Jiayi-Pan/TinyZero},
 note         = {Accessed: 2025-01-24},
