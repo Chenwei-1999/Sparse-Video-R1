@@ -103,7 +103,7 @@ class vLLMRollout(BaseRollout):
                         else config.prompt_length + config.response_length
         max_model_len = int(max_model_len)  
         if self.config.prompt_length == -1:
-            print('init vllm rollout with dynamic prompt length')
+
             self.inference_engine = LLM(
                 model=model_path,
                 enable_sleep_mode=True,
@@ -117,6 +117,7 @@ class vLLMRollout(BaseRollout):
                 disable_log_stats=config.disable_log_stats,
                 enable_chunked_prefill=config.enable_chunked_prefill,
                 enable_prefix_caching=True,
+                limit_mm_per_prompt=config.limit_mm_per_prompt,
             )
         else:
             if max_num_batched_tokens < max_model_len and self.config.enable_chunked_prefill:
@@ -137,6 +138,7 @@ class vLLMRollout(BaseRollout):
                 max_num_batched_tokens=max_num_batched_tokens,
                 enable_chunked_prefill=config.enable_chunked_prefill,
                 enable_prefix_caching=True,
+                limit_mm_per_prompt=config.limit_mm_per_prompt,
             )
 
         # Offload vllm model to reduce peak memory usage

@@ -97,6 +97,11 @@ class vLLMRollout(BaseRollout):
         if max_num_batched_tokens < max_model_len and self.config.enable_chunked_prefill:
             raise ValueError('Enable chunked prefill, max_num_batched_tokens is smaller than max_model_len, \
                              please increase max_num_batched_tokens or disable chunked prefill')
+        print('=' * 20)
+        print('=' * 20)
+        print(config.limit_mm_per_prompt)
+        print('=' * 20)
+        print('=' * 20)
 
         self.inference_engine = LLM(
             actor_module,
@@ -112,6 +117,7 @@ class vLLMRollout(BaseRollout):
             disable_log_stats=config.disable_log_stats,
             max_num_batched_tokens=max_num_batched_tokens,
             enable_chunked_prefill=config.enable_chunked_prefill,
+            limit_mm_per_prompt=config.limit_mm_per_prompt,
         )
 
         # Offload vllm model to reduce peak memory usage
