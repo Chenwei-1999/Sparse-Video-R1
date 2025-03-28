@@ -429,7 +429,7 @@ class RayPPOTrainer(object):
 
         self.train_dataloader = StatefulDataLoader(dataset=self.train_dataset,
                                                    batch_size=self.config.data.train_batch_size,
-                                                   num_workers=8,
+                                                   num_workers=16,
                                                    drop_last=True,
                                                    collate_fn=collate_fn,
                                                    sampler=sampler)
@@ -454,7 +454,7 @@ class RayPPOTrainer(object):
             # Validation datasets are sent to inference engines as a whole batch,
             # which will schedule the memory themselves.
             batch_size=len(self.val_dataset),
-            num_workers=8,
+            num_workers=16,
             shuffle=False,
             drop_last=False,
             collate_fn=collate_fn)
@@ -789,12 +789,13 @@ class RayPPOTrainer(object):
         from verl.utils.tracking import Tracking
         from omegaconf import OmegaConf
         print("init tracking")
+        print(f"use critic {self.use_critic}")
         try:
             container = OmegaConf.to_container(self.config, resolve=True, throw_on_missing=True)
             print("Converted config:", container)
         except Exception as e:
             print("Error during OmegaConf conversion:", e)
-
+        
         logger = Tracking(project_name=self.config.trainer.project_name,
                           experiment_name=self.config.trainer.experiment_name,
                           default_backend=self.config.trainer.logger,
@@ -821,9 +822,7 @@ class RayPPOTrainer(object):
         # we start from step 1
         self.global_steps += 1
         last_val_metrics = None
-        print("======================")
-        print("Training started")
-        print("======================")
+
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
