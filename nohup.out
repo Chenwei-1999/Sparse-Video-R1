@@ -1,0 +1,361 @@
++ export HF_HOME=/shares/hlw3876/chenwei
++ HF_HOME=/shares/hlw3876/chenwei
++ export N_GPUS=4
++ N_GPUS=4
++ export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
++ BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
++ export DATA_DIR=/shares/hlw3876/chenwei/NExT-QA/parquet
++ DATA_DIR=/shares/hlw3876/chenwei/NExT-QA/parquet
++ export ROLLOUT_TP_SIZE=2
++ ROLLOUT_TP_SIZE=2
++ export EXPERIMENT_NAME=qwen2.5-3b
++ EXPERIMENT_NAME=qwen2.5-3b
++ export VLLM_ATTENTION_BACKEND=XFORMERS
++ VLLM_ATTENTION_BACKEND=XFORMERS
++ tee verl_demo.log
++ python3 -m verl.trainer.main_ppo algorithm.adv_estimator=grpo data.train_files=/shares/hlw3876/chenwei/NExT-QA/parquet/train.parquet data.val_files=/shares/hlw3876/chenwei/NExT-QA/parquet/val.parquet data.train_batch_size=4 data.max_prompt_length=10240 data.max_response_length=1024 actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct actor_rollout_ref.actor.optim.lr=1e-6 actor_rollout_ref.model.use_remove_padding=True actor_rollout_ref.actor.ppo_mini_batch_size=4 actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 actor_rollout_ref.actor.use_kl_loss=True actor_rollout_ref.actor.kl_loss_coef=0.01 actor_rollout_ref.actor.kl_loss_type=low_var_kl actor_rollout_ref.model.enable_gradient_checkpointing=True actor_rollout_ref.actor.fsdp_config.param_offload=False actor_rollout_ref.actor.fsdp_config.optimizer_offload=False actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 actor_rollout_ref.rollout.tensor_model_parallel_size=2 actor_rollout_ref.rollout.name=vllm actor_rollout_ref.rollout.gpu_memory_utilization=0.6 actor_rollout_ref.rollout.enable_chunked_prefill=False actor_rollout_ref.rollout.enforce_eager=False actor_rollout_ref.rollout.free_cache_engine=False actor_rollout_ref.rollout.n=5 actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 actor_rollout_ref.ref.fsdp_config.param_offload=True algorithm.kl_ctrl.kl_coef=0.001 trainer.critic_warmup=0 'trainer.logger=[console,wandb]' trainer.project_name=verl_test trainer.experiment_name=test trainer.n_gpus_per_node=4 trainer.nnodes=1 trainer.save_freq=-1 trainer.test_freq=5 trainer.total_epochs=15
+2025-03-08 16:05:09,350	INFO worker.py:1821 -- Started a local Ray instance.
+[33m(raylet)[0m bash: /home/cxk2993/miniconda3/envs/zero/lib/libtinfo.so.6: no version information available (required by bash)
+[36m(main_task pid=772755)[0m {'actor_rollout_ref': {'actor': {'clip_ratio': 0.2,
+[36m(main_task pid=772755)[0m                                  'entropy_coeff': 0.001,
+[36m(main_task pid=772755)[0m                                  'fsdp_config': {'fsdp_size': -1,
+[36m(main_task pid=772755)[0m                                                  'optimizer_offload': False,
+[36m(main_task pid=772755)[0m                                                  'param_offload': False,
+[36m(main_task pid=772755)[0m                                                  'wrap_policy': {'min_num_params': 0}},
+[36m(main_task pid=772755)[0m                                  'grad_clip': 1.0,
+[36m(main_task pid=772755)[0m                                  'kl_loss_coef': 0.01,
+[36m(main_task pid=772755)[0m                                  'kl_loss_type': 'low_var_kl',
+[36m(main_task pid=772755)[0m                                  'optim': {'lr': 1e-06,
+[36m(main_task pid=772755)[0m                                            'lr_warmup_steps_ratio': 0.0,
+[36m(main_task pid=772755)[0m                                            'min_lr_ratio': None,
+[36m(main_task pid=772755)[0m                                            'total_training_steps': -1,
+[36m(main_task pid=772755)[0m                                            'warmup_style': 'constant'},
+[36m(main_task pid=772755)[0m                                  'ppo_epochs': 1,
+[36m(main_task pid=772755)[0m                                  'ppo_max_token_len_per_gpu': 16384,
+[36m(main_task pid=772755)[0m                                  'ppo_micro_batch_size': None,
+[36m(main_task pid=772755)[0m                                  'ppo_micro_batch_size_per_gpu': 1,
+[36m(main_task pid=772755)[0m                                  'ppo_mini_batch_size': 4,
+[36m(main_task pid=772755)[0m                                  'shuffle': False,
+[36m(main_task pid=772755)[0m                                  'strategy': 'fsdp',
+[36m(main_task pid=772755)[0m                                  'ulysses_sequence_parallel_size': 1,
+[36m(main_task pid=772755)[0m                                  'use_dynamic_bsz': False,
+[36m(main_task pid=772755)[0m                                  'use_kl_loss': True},
+[36m(main_task pid=772755)[0m                        'hybrid_engine': True,
+[36m(main_task pid=772755)[0m                        'model': {'enable_gradient_checkpointing': True,
+[36m(main_task pid=772755)[0m                                  'external_lib': None,
+[36m(main_task pid=772755)[0m                                  'override_config': {},
+[36m(main_task pid=772755)[0m                                  'path': 'Qwen/Qwen2.5-VL-3B-Instruct',
+[36m(main_task pid=772755)[0m                                  'use_remove_padding': True},
+[36m(main_task pid=772755)[0m                        'ref': {'fsdp_config': {'param_offload': True,
+[36m(main_task pid=772755)[0m                                                'wrap_policy': {'min_num_params': 0}},
+[36m(main_task pid=772755)[0m                                'log_prob_max_token_len_per_gpu': 16384,
+[36m(main_task pid=772755)[0m                                'log_prob_micro_batch_size': None,
+[36m(main_task pid=772755)[0m                                'log_prob_micro_batch_size_per_gpu': 1,
+[36m(main_task pid=772755)[0m                                'log_prob_use_dynamic_bsz': False,
+[36m(main_task pid=772755)[0m                                'ulysses_sequence_parallel_size': 1},
+[36m(main_task pid=772755)[0m                        'rollout': {'disable_log_stats': True,
+[36m(main_task pid=772755)[0m                                    'do_sample': True,
+[36m(main_task pid=772755)[0m                                    'dtype': 'bfloat16',
+[36m(main_task pid=772755)[0m                                    'enable_chunked_prefill': False,
+[36m(main_task pid=772755)[0m                                    'enforce_eager': False,
+[36m(main_task pid=772755)[0m                                    'free_cache_engine': False,
+[36m(main_task pid=772755)[0m                                    'gpu_memory_utilization': 0.6,
+[36m(main_task pid=772755)[0m                                    'ignore_eos': False,
+[36m(main_task pid=772755)[0m                                    'limit_mm_per_prompt': {'image': 10},
+[36m(main_task pid=772755)[0m                                    'load_format': 'dummy_dtensor',
+[36m(main_task pid=772755)[0m                                    'log_prob_max_token_len_per_gpu': 16384,
+[36m(main_task pid=772755)[0m                                    'log_prob_micro_batch_size': None,
+[36m(main_task pid=772755)[0m                                    'log_prob_micro_batch_size_per_gpu': 1,
+[36m(main_task pid=772755)[0m                                    'log_prob_use_dynamic_bsz': False,
+[36m(main_task pid=772755)[0m                                    'max_model_len': None,
+[36m(main_task pid=772755)[0m                                    'max_num_batched_tokens': 20480,
+[36m(main_task pid=772755)[0m                                    'max_num_seqs': 1024,
+[36m(main_task pid=772755)[0m                                    'n': 5,
+[36m(main_task pid=772755)[0m                                    'name': 'vllm',
+[36m(main_task pid=772755)[0m                                    'prompt_length': 10240,
+[36m(main_task pid=772755)[0m                                    'response_length': 1024,
+[36m(main_task pid=772755)[0m                                    'temperature': 1.0,
+[36m(main_task pid=772755)[0m                                    'tensor_model_parallel_size': 2,
+[36m(main_task pid=772755)[0m                                    'top_k': -1,
+[36m(main_task pid=772755)[0m                                    'top_p': 1,
+[36m(main_task pid=772755)[0m                                    'use_fire_sampling': False}},
+[36m(main_task pid=772755)[0m  'algorithm': {'adv_estimator': 'grpo',
+[36m(main_task pid=772755)[0m                'gamma': 1.0,
+[36m(main_task pid=772755)[0m                'kl_ctrl': {'kl_coef': 0.001, 'type': 'fixed'},
+[36m(main_task pid=772755)[0m                'kl_penalty': 'kl',
+[36m(main_task pid=772755)[0m                'lam': 1.0},
+[36m(main_task pid=772755)[0m  'critic': {'cliprange_value': 0.5,
+[36m(main_task pid=772755)[0m             'forward_max_token_len_per_gpu': 32768,
+[36m(main_task pid=772755)[0m             'forward_micro_batch_size': None,
+[36m(main_task pid=772755)[0m             'forward_micro_batch_size_per_gpu': None,
+[36m(main_task pid=772755)[0m             'grad_clip': 1.0,
+[36m(main_task pid=772755)[0m             'model': {'enable_gradient_checkpointing': True,
+[36m(main_task pid=772755)[0m                       'external_lib': None,
+[36m(main_task pid=772755)[0m                       'fsdp_config': {'fsdp_size': -1,
+[36m(main_task pid=772755)[0m                                       'optimizer_offload': False,
+[36m(main_task pid=772755)[0m                                       'param_offload': False,
+[36m(main_task pid=772755)[0m                                       'wrap_policy': {'min_num_params': 0}},
+[36m(main_task pid=772755)[0m                       'override_config': {},
+[36m(main_task pid=772755)[0m                       'path': '~/models/deepseek-llm-7b-chat',
+[36m(main_task pid=772755)[0m                       'tokenizer_path': 'Qwen/Qwen2.5-VL-3B-Instruct',
+[36m(main_task pid=772755)[0m                       'use_remove_padding': False},
+[36m(main_task pid=772755)[0m             'optim': {'lr': 1e-05,
+[36m(main_task pid=772755)[0m                       'lr_warmup_steps_ratio': 0.0,
+[36m(main_task pid=772755)[0m                       'min_lr_ratio': None,
+[36m(main_task pid=772755)[0m                       'total_training_steps': -1,
+[36m(main_task pid=772755)[0m                       'warmup_style': 'constant'},
+[36m(main_task pid=772755)[0m             'ppo_epochs': 1,
+[36m(main_task pid=772755)[0m             'ppo_max_token_len_per_gpu': 32768,
+[36m(main_task pid=772755)[0m             'ppo_micro_batch_size': None,
+[36m(main_task pid=772755)[0m             'ppo_micro_batch_size_per_gpu': None,
+[36m(main_task pid=772755)[0m             'ppo_mini_batch_size': 4,
+[36m(main_task pid=772755)[0m             'shuffle': False,
+[36m(main_task pid=772755)[0m             'strategy': 'fsdp',
+[36m(main_task pid=772755)[0m             'ulysses_sequence_parallel_size': 1,
+[36m(main_task pid=772755)[0m             'use_dynamic_bsz': False},
+[36m(main_task pid=772755)[0m  'data': {'image_key': 'images',
+[36m(main_task pid=772755)[0m           'max_prompt_length': 10240,
+[36m(main_task pid=772755)[0m           'max_response_length': 1024,
+[36m(main_task pid=772755)[0m           'prompt_key': 'prompt',
+[36m(main_task pid=772755)[0m           'return_raw_chat': False,
+[36m(main_task pid=772755)[0m           'return_raw_input_ids': False,
+[36m(main_task pid=772755)[0m           'shuffle': True,
+[36m(main_task pid=772755)[0m           'tokenizer': None,
+[36m(main_task pid=772755)[0m           'train_batch_size': 4,
+[36m(main_task pid=772755)[0m           'train_files': '/shares/hlw3876/chenwei/NExT-QA/parquet/train.parquet',
+[36m(main_task pid=772755)[0m           'val_batch_size': None,
+[36m(main_task pid=772755)[0m           'val_files': '/shares/hlw3876/chenwei/NExT-QA/parquet/val.parquet'},
+[36m(main_task pid=772755)[0m  'reward_model': {'enable': False,
+[36m(main_task pid=772755)[0m                   'forward_max_token_len_per_gpu': 32768,
+[36m(main_task pid=772755)[0m                   'max_length': None,
+[36m(main_task pid=772755)[0m                   'micro_batch_size': None,
+[36m(main_task pid=772755)[0m                   'micro_batch_size_per_gpu': None,
+[36m(main_task pid=772755)[0m                   'model': {'external_lib': None,
+[36m(main_task pid=772755)[0m                             'fsdp_config': {'fsdp_size': -1,
+[36m(main_task pid=772755)[0m                                             'min_num_params': 0,
+[36m(main_task pid=772755)[0m                                             'param_offload': False},
+[36m(main_task pid=772755)[0m                             'input_tokenizer': 'Qwen/Qwen2.5-VL-3B-Instruct',
+[36m(main_task pid=772755)[0m                             'path': '~/models/FsfairX-LLaMA3-RM-v0.1',
+[36m(main_task pid=772755)[0m                             'use_remove_padding': False},
+[36m(main_task pid=772755)[0m                   'reward_manager': 'naive',
+[36m(main_task pid=772755)[0m                   'strategy': 'fsdp',
+[36m(main_task pid=772755)[0m                   'ulysses_sequence_parallel_size': 1,
+[36m(main_task pid=772755)[0m                   'use_dynamic_bsz': False},
+[36m(main_task pid=772755)[0m  'trainer': {'critic_warmup': 0,
+[36m(main_task pid=772755)[0m              'default_hdfs_dir': None,
+[36m(main_task pid=772755)[0m              'default_local_dir': 'checkpoints/verl_test/test',
+[36m(main_task pid=772755)[0m              'del_local_ckpt_after_load': False,
+[36m(main_task pid=772755)[0m              'experiment_name': 'test',
+[36m(main_task pid=772755)[0m              'logger': ['console', 'wandb'],
+[36m(main_task pid=772755)[0m              'n_gpus_per_node': 4,
+[36m(main_task pid=772755)[0m              'nnodes': 1,
+[36m(main_task pid=772755)[0m              'project_name': 'verl_test',
+[36m(main_task pid=772755)[0m              'remove_previous_ckpt_in_save': False,
+[36m(main_task pid=772755)[0m              'resume_from_path': False,
+[36m(main_task pid=772755)[0m              'resume_mode': 'auto',
+[36m(main_task pid=772755)[0m              'save_freq': -1,
+[36m(main_task pid=772755)[0m              'test_freq': 5,
+[36m(main_task pid=772755)[0m              'total_epochs': 15,
+[36m(main_task pid=772755)[0m              'total_training_steps': None,
+[36m(main_task pid=772755)[0m              'val_generations_to_log_to_wandb': 0}}
+[36m(main_task pid=772755)[0m INFO 03-08 16:05:24 __init__.py:207] Automatically detected platform cuda.
+[36m(main_task pid=772755)[0m [validate_config] All configuration checks passed successfully!
+Error executing job with overrides: ['algorithm.adv_estimator=grpo', 'data.train_files=/shares/hlw3876/chenwei/NExT-QA/parquet/train.parquet', 'data.val_files=/shares/hlw3876/chenwei/NExT-QA/parquet/val.parquet', 'data.train_batch_size=4', 'data.max_prompt_length=10240', 'data.max_response_length=1024', 'actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct', 'actor_rollout_ref.actor.optim.lr=1e-6', 'actor_rollout_ref.model.use_remove_padding=True', 'actor_rollout_ref.actor.ppo_mini_batch_size=4', 'actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1', 'actor_rollout_ref.actor.use_kl_loss=True', 'actor_rollout_ref.actor.kl_loss_coef=0.01', 'actor_rollout_ref.actor.kl_loss_type=low_var_kl', 'actor_rollout_ref.model.enable_gradient_checkpointing=True', 'actor_rollout_ref.actor.fsdp_config.param_offload=False', 'actor_rollout_ref.actor.fsdp_config.optimizer_offload=False', 'actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1', 'actor_rollout_ref.rollout.tensor_model_parallel_size=2', 'actor_rollout_ref.rollout.name=vllm', 'actor_rollout_ref.rollout.gpu_memory_utilization=0.6', 'actor_rollout_ref.rollout.enable_chunked_prefill=False', 'actor_rollout_ref.rollout.enforce_eager=False', 'actor_rollout_ref.rollout.free_cache_engine=False', 'actor_rollout_ref.rollout.n=5', 'actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1', 'actor_rollout_ref.ref.fsdp_config.param_offload=True', 'algorithm.kl_ctrl.kl_coef=0.001', 'trainer.critic_warmup=0', 'trainer.logger=[console,wandb]', 'trainer.project_name=verl_test', 'trainer.experiment_name=test', 'trainer.n_gpus_per_node=4', 'trainer.nnodes=1', 'trainer.save_freq=-1', 'trainer.test_freq=5', 'trainer.total_epochs=15']
+Traceback (most recent call last):
+  File "/home/cxk2993/TinyZero/verl/trainer/main_ppo.py", line 25, in main
+    run_ppo(config)
+  File "/home/cxk2993/TinyZero/verl/trainer/main_ppo.py", line 33, in run_ppo
+    ray.get(main_task.remote(config, compute_score))
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/auto_init_hook.py", line 21, in auto_init_wrapper
+    return fn(*args, **kwargs)
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/client_mode_hook.py", line 103, in wrapper
+    return func(*args, **kwargs)
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/worker.py", line 2755, in get
+    values, debugger_breakpoint = worker.get_objects(object_refs, timeout=timeout)
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/worker.py", line 908, in get_objects
+    raise value
+ray.exceptions.LocalRayletDiedError: The task's local raylet died. Check raylet.out for more information.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+bash: ./scripts/run_qwen2_5_vl-3b.sh: No such file or directory
++ export HF_HOME=/shares/hlw3876/chenwei
++ HF_HOME=/shares/hlw3876/chenwei
++ export N_GPUS=4
++ N_GPUS=4
++ export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
++ BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
++ export DATA_DIR=/shares/hlw3876/chenwei/NExT-QA/parquet
++ DATA_DIR=/shares/hlw3876/chenwei/NExT-QA/parquet
++ export ROLLOUT_TP_SIZE=2
++ ROLLOUT_TP_SIZE=2
++ export EXPERIMENT_NAME=qwen2.5-3b
++ EXPERIMENT_NAME=qwen2.5-3b
++ export VLLM_ATTENTION_BACKEND=XFORMERS
++ VLLM_ATTENTION_BACKEND=XFORMERS
++ tee verl_demo.log
++ python3 -m verl.trainer.main_ppo algorithm.adv_estimator=grpo data.train_files=/shares/hlw3876/chenwei/NExT-QA/parquet/train.parquet data.val_files=/shares/hlw3876/chenwei/NExT-QA/parquet/val.parquet data.train_batch_size=4 data.max_prompt_length=10240 data.max_response_length=1024 actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct actor_rollout_ref.actor.optim.lr=1e-6 actor_rollout_ref.model.use_remove_padding=True actor_rollout_ref.actor.ppo_mini_batch_size=4 actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 actor_rollout_ref.actor.use_kl_loss=True actor_rollout_ref.actor.kl_loss_coef=0.01 actor_rollout_ref.actor.kl_loss_type=low_var_kl actor_rollout_ref.model.enable_gradient_checkpointing=True actor_rollout_ref.actor.fsdp_config.param_offload=False actor_rollout_ref.actor.fsdp_config.optimizer_offload=False actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 actor_rollout_ref.rollout.tensor_model_parallel_size=2 actor_rollout_ref.rollout.name=vllm actor_rollout_ref.rollout.gpu_memory_utilization=0.6 actor_rollout_ref.rollout.enable_chunked_prefill=False actor_rollout_ref.rollout.enforce_eager=False actor_rollout_ref.rollout.free_cache_engine=False actor_rollout_ref.rollout.n=5 actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 actor_rollout_ref.ref.fsdp_config.param_offload=True algorithm.kl_ctrl.kl_coef=0.001 trainer.critic_warmup=0 'trainer.logger=[console,wandb]' trainer.project_name=verl_test trainer.experiment_name=test trainer.n_gpus_per_node=4 trainer.nnodes=1 trainer.save_freq=-1 trainer.test_freq=5 trainer.total_epochs=15
+2025-03-08 16:11:37,410	INFO worker.py:1821 -- Started a local Ray instance.
+[33m(raylet)[0m bash: /home/cxk2993/miniconda3/envs/zero/lib/libtinfo.so.6: no version information available (required by bash)
+[36m(main_task pid=795054)[0m {'actor_rollout_ref': {'actor': {'clip_ratio': 0.2,
+[36m(main_task pid=795054)[0m                                  'entropy_coeff': 0.001,
+[36m(main_task pid=795054)[0m                                  'fsdp_config': {'fsdp_size': -1,
+[36m(main_task pid=795054)[0m                                                  'optimizer_offload': False,
+[36m(main_task pid=795054)[0m                                                  'param_offload': False,
+[36m(main_task pid=795054)[0m                                                  'wrap_policy': {'min_num_params': 0}},
+[36m(main_task pid=795054)[0m                                  'grad_clip': 1.0,
+[36m(main_task pid=795054)[0m                                  'kl_loss_coef': 0.01,
+[36m(main_task pid=795054)[0m                                  'kl_loss_type': 'low_var_kl',
+[36m(main_task pid=795054)[0m                                  'optim': {'lr': 1e-06,
+[36m(main_task pid=795054)[0m                                            'lr_warmup_steps_ratio': 0.0,
+[36m(main_task pid=795054)[0m                                            'min_lr_ratio': None,
+[36m(main_task pid=795054)[0m                                            'total_training_steps': -1,
+[36m(main_task pid=795054)[0m                                            'warmup_style': 'constant'},
+[36m(main_task pid=795054)[0m                                  'ppo_epochs': 1,
+[36m(main_task pid=795054)[0m                                  'ppo_max_token_len_per_gpu': 16384,
+[36m(main_task pid=795054)[0m                                  'ppo_micro_batch_size': None,
+[36m(main_task pid=795054)[0m                                  'ppo_micro_batch_size_per_gpu': 1,
+[36m(main_task pid=795054)[0m                                  'ppo_mini_batch_size': 4,
+[36m(main_task pid=795054)[0m                                  'shuffle': False,
+[36m(main_task pid=795054)[0m                                  'strategy': 'fsdp',
+[36m(main_task pid=795054)[0m                                  'ulysses_sequence_parallel_size': 1,
+[36m(main_task pid=795054)[0m                                  'use_dynamic_bsz': False,
+[36m(main_task pid=795054)[0m                                  'use_kl_loss': True},
+[36m(main_task pid=795054)[0m                        'hybrid_engine': True,
+[36m(main_task pid=795054)[0m                        'model': {'enable_gradient_checkpointing': True,
+[36m(main_task pid=795054)[0m                                  'external_lib': None,
+[36m(main_task pid=795054)[0m                                  'override_config': {},
+[36m(main_task pid=795054)[0m                                  'path': 'Qwen/Qwen2.5-VL-3B-Instruct',
+[36m(main_task pid=795054)[0m                                  'use_remove_padding': True},
+[36m(main_task pid=795054)[0m                        'ref': {'fsdp_config': {'param_offload': True,
+[36m(main_task pid=795054)[0m                                                'wrap_policy': {'min_num_params': 0}},
+[36m(main_task pid=795054)[0m                                'log_prob_max_token_len_per_gpu': 16384,
+[36m(main_task pid=795054)[0m                                'log_prob_micro_batch_size': None,
+[36m(main_task pid=795054)[0m                                'log_prob_micro_batch_size_per_gpu': 1,
+[36m(main_task pid=795054)[0m                                'log_prob_use_dynamic_bsz': False,
+[36m(main_task pid=795054)[0m                                'ulysses_sequence_parallel_size': 1},
+[36m(main_task pid=795054)[0m                        'rollout': {'disable_log_stats': True,
+[36m(main_task pid=795054)[0m                                    'do_sample': True,
+[36m(main_task pid=795054)[0m                                    'dtype': 'bfloat16',
+[36m(main_task pid=795054)[0m                                    'enable_chunked_prefill': False,
+[36m(main_task pid=795054)[0m                                    'enforce_eager': False,
+[36m(main_task pid=795054)[0m                                    'free_cache_engine': False,
+[36m(main_task pid=795054)[0m                                    'gpu_memory_utilization': 0.6,
+[36m(main_task pid=795054)[0m                                    'ignore_eos': False,
+[36m(main_task pid=795054)[0m                                    'limit_mm_per_prompt': {'image': 10},
+[36m(main_task pid=795054)[0m                                    'load_format': 'dummy_dtensor',
+[36m(main_task pid=795054)[0m                                    'log_prob_max_token_len_per_gpu': 16384,
+[36m(main_task pid=795054)[0m                                    'log_prob_micro_batch_size': None,
+[36m(main_task pid=795054)[0m                                    'log_prob_micro_batch_size_per_gpu': 1,
+[36m(main_task pid=795054)[0m                                    'log_prob_use_dynamic_bsz': False,
+[36m(main_task pid=795054)[0m                                    'max_model_len': None,
+[36m(main_task pid=795054)[0m                                    'max_num_batched_tokens': 20480,
+[36m(main_task pid=795054)[0m                                    'max_num_seqs': 1024,
+[36m(main_task pid=795054)[0m                                    'n': 5,
+[36m(main_task pid=795054)[0m                                    'name': 'vllm',
+[36m(main_task pid=795054)[0m                                    'prompt_length': 10240,
+[36m(main_task pid=795054)[0m                                    'response_length': 1024,
+[36m(main_task pid=795054)[0m                                    'temperature': 1.0,
+[36m(main_task pid=795054)[0m                                    'tensor_model_parallel_size': 2,
+[36m(main_task pid=795054)[0m                                    'top_k': -1,
+[36m(main_task pid=795054)[0m                                    'top_p': 1,
+[36m(main_task pid=795054)[0m                                    'use_fire_sampling': False}},
+[36m(main_task pid=795054)[0m  'algorithm': {'adv_estimator': 'grpo',
+[36m(main_task pid=795054)[0m                'gamma': 1.0,
+[36m(main_task pid=795054)[0m                'kl_ctrl': {'kl_coef': 0.001, 'type': 'fixed'},
+[36m(main_task pid=795054)[0m                'kl_penalty': 'kl',
+[36m(main_task pid=795054)[0m                'lam': 1.0},
+[36m(main_task pid=795054)[0m  'critic': {'cliprange_value': 0.5,
+[36m(main_task pid=795054)[0m             'forward_max_token_len_per_gpu': 32768,
+[36m(main_task pid=795054)[0m             'forward_micro_batch_size': None,
+[36m(main_task pid=795054)[0m             'forward_micro_batch_size_per_gpu': None,
+[36m(main_task pid=795054)[0m             'grad_clip': 1.0,
+[36m(main_task pid=795054)[0m             'model': {'enable_gradient_checkpointing': True,
+[36m(main_task pid=795054)[0m                       'external_lib': None,
+[36m(main_task pid=795054)[0m                       'fsdp_config': {'fsdp_size': -1,
+[36m(main_task pid=795054)[0m                                       'optimizer_offload': False,
+[36m(main_task pid=795054)[0m                                       'param_offload': False,
+[36m(main_task pid=795054)[0m                                       'wrap_policy': {'min_num_params': 0}},
+[36m(main_task pid=795054)[0m                       'override_config': {},
+[36m(main_task pid=795054)[0m                       'path': '~/models/deepseek-llm-7b-chat',
+[36m(main_task pid=795054)[0m                       'tokenizer_path': 'Qwen/Qwen2.5-VL-3B-Instruct',
+[36m(main_task pid=795054)[0m                       'use_remove_padding': False},
+[36m(main_task pid=795054)[0m             'optim': {'lr': 1e-05,
+[36m(main_task pid=795054)[0m                       'lr_warmup_steps_ratio': 0.0,
+[36m(main_task pid=795054)[0m                       'min_lr_ratio': None,
+[36m(main_task pid=795054)[0m                       'total_training_steps': -1,
+[36m(main_task pid=795054)[0m                       'warmup_style': 'constant'},
+[36m(main_task pid=795054)[0m             'ppo_epochs': 1,
+[36m(main_task pid=795054)[0m             'ppo_max_token_len_per_gpu': 32768,
+[36m(main_task pid=795054)[0m             'ppo_micro_batch_size': None,
+[36m(main_task pid=795054)[0m             'ppo_micro_batch_size_per_gpu': None,
+[36m(main_task pid=795054)[0m             'ppo_mini_batch_size': 4,
+[36m(main_task pid=795054)[0m             'shuffle': False,
+[36m(main_task pid=795054)[0m             'strategy': 'fsdp',
+[36m(main_task pid=795054)[0m             'ulysses_sequence_parallel_size': 1,
+[36m(main_task pid=795054)[0m             'use_dynamic_bsz': False},
+[36m(main_task pid=795054)[0m  'data': {'image_key': 'images',
+[36m(main_task pid=795054)[0m           'max_prompt_length': 10240,
+[36m(main_task pid=795054)[0m           'max_response_length': 1024,
+[36m(main_task pid=795054)[0m           'prompt_key': 'prompt',
+[36m(main_task pid=795054)[0m           'return_raw_chat': False,
+[36m(main_task pid=795054)[0m           'return_raw_input_ids': False,
+[36m(main_task pid=795054)[0m           'shuffle': True,
+[36m(main_task pid=795054)[0m           'tokenizer': None,
+[36m(main_task pid=795054)[0m           'train_batch_size': 4,
+[36m(main_task pid=795054)[0m           'train_files': '/shares/hlw3876/chenwei/NExT-QA/parquet/train.parquet',
+[36m(main_task pid=795054)[0m           'val_batch_size': None,
+[36m(main_task pid=795054)[0m           'val_files': '/shares/hlw3876/chenwei/NExT-QA/parquet/val.parquet'},
+[36m(main_task pid=795054)[0m  'reward_model': {'enable': False,
+[36m(main_task pid=795054)[0m                   'forward_max_token_len_per_gpu': 32768,
+[36m(main_task pid=795054)[0m                   'max_length': None,
+[36m(main_task pid=795054)[0m                   'micro_batch_size': None,
+[36m(main_task pid=795054)[0m                   'micro_batch_size_per_gpu': None,
+[36m(main_task pid=795054)[0m                   'model': {'external_lib': None,
+[36m(main_task pid=795054)[0m                             'fsdp_config': {'fsdp_size': -1,
+[36m(main_task pid=795054)[0m                                             'min_num_params': 0,
+[36m(main_task pid=795054)[0m                                             'param_offload': False},
+[36m(main_task pid=795054)[0m                             'input_tokenizer': 'Qwen/Qwen2.5-VL-3B-Instruct',
+[36m(main_task pid=795054)[0m                             'path': '~/models/FsfairX-LLaMA3-RM-v0.1',
+[36m(main_task pid=795054)[0m                             'use_remove_padding': False},
+[36m(main_task pid=795054)[0m                   'reward_manager': 'naive',
+[36m(main_task pid=795054)[0m                   'strategy': 'fsdp',
+[36m(main_task pid=795054)[0m                   'ulysses_sequence_parallel_size': 1,
+[36m(main_task pid=795054)[0m                   'use_dynamic_bsz': False},
+[36m(main_task pid=795054)[0m  'trainer': {'critic_warmup': 0,
+[36m(main_task pid=795054)[0m              'default_hdfs_dir': None,
+[36m(main_task pid=795054)[0m              'default_local_dir': 'checkpoints/verl_test/test',
+[36m(main_task pid=795054)[0m              'del_local_ckpt_after_load': False,
+[36m(main_task pid=795054)[0m              'experiment_name': 'test',
+[36m(main_task pid=795054)[0m              'logger': ['console', 'wandb'],
+[36m(main_task pid=795054)[0m              'n_gpus_per_node': 4,
+[36m(main_task pid=795054)[0m              'nnodes': 1,
+[36m(main_task pid=795054)[0m              'project_name': 'verl_test',
+[36m(main_task pid=795054)[0m              'remove_previous_ckpt_in_save': False,
+[36m(main_task pid=795054)[0m              'resume_from_path': False,
+[36m(main_task pid=795054)[0m              'resume_mode': 'auto',
+[36m(main_task pid=795054)[0m              'save_freq': -1,
+[36m(main_task pid=795054)[0m              'test_freq': 5,
+[36m(main_task pid=795054)[0m              'total_epochs': 15,
+[36m(main_task pid=795054)[0m              'total_training_steps': None,
+[36m(main_task pid=795054)[0m              'val_generations_to_log_to_wandb': 0}}
+[36m(main_task pid=795054)[0m INFO 03-08 16:11:54 __init__.py:207] Automatically detected platform cuda.
+[36m(main_task pid=795054)[0m [validate_config] All configuration checks passed successfully!
+Error executing job with overrides: ['algorithm.adv_estimator=grpo', 'data.train_files=/shares/hlw3876/chenwei/NExT-QA/parquet/train.parquet', 'data.val_files=/shares/hlw3876/chenwei/NExT-QA/parquet/val.parquet', 'data.train_batch_size=4', 'data.max_prompt_length=10240', 'data.max_response_length=1024', 'actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct', 'actor_rollout_ref.actor.optim.lr=1e-6', 'actor_rollout_ref.model.use_remove_padding=True', 'actor_rollout_ref.actor.ppo_mini_batch_size=4', 'actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1', 'actor_rollout_ref.actor.use_kl_loss=True', 'actor_rollout_ref.actor.kl_loss_coef=0.01', 'actor_rollout_ref.actor.kl_loss_type=low_var_kl', 'actor_rollout_ref.model.enable_gradient_checkpointing=True', 'actor_rollout_ref.actor.fsdp_config.param_offload=False', 'actor_rollout_ref.actor.fsdp_config.optimizer_offload=False', 'actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1', 'actor_rollout_ref.rollout.tensor_model_parallel_size=2', 'actor_rollout_ref.rollout.name=vllm', 'actor_rollout_ref.rollout.gpu_memory_utilization=0.6', 'actor_rollout_ref.rollout.enable_chunked_prefill=False', 'actor_rollout_ref.rollout.enforce_eager=False', 'actor_rollout_ref.rollout.free_cache_engine=False', 'actor_rollout_ref.rollout.n=5', 'actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1', 'actor_rollout_ref.ref.fsdp_config.param_offload=True', 'algorithm.kl_ctrl.kl_coef=0.001', 'trainer.critic_warmup=0', 'trainer.logger=[console,wandb]', 'trainer.project_name=verl_test', 'trainer.experiment_name=test', 'trainer.n_gpus_per_node=4', 'trainer.nnodes=1', 'trainer.save_freq=-1', 'trainer.test_freq=5', 'trainer.total_epochs=15']
+Traceback (most recent call last):
+  File "/home/cxk2993/TinyZero/verl/trainer/main_ppo.py", line 25, in main
+    run_ppo(config)
+  File "/home/cxk2993/TinyZero/verl/trainer/main_ppo.py", line 33, in run_ppo
+    ray.get(main_task.remote(config, compute_score))
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/auto_init_hook.py", line 21, in auto_init_wrapper
+    return fn(*args, **kwargs)
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/client_mode_hook.py", line 103, in wrapper
+    return func(*args, **kwargs)
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/worker.py", line 2755, in get
+    values, debugger_breakpoint = worker.get_objects(object_refs, timeout=timeout)
+  File "/home/cxk2993/miniconda3/envs/zero/lib/python3.9/site-packages/ray/_private/worker.py", line 908, in get_objects
+    raise value
+ray.exceptions.LocalRayletDiedError: The task's local raylet died. Check raylet.out for more information.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+[33m(raylet)[0m The node with node id: b6302a1e1b916f60a64ff27217e465e912c10b1c0e17943d54483df1 and address: 129.105.61.87 and node name: 129.105.61.87 has been marked dead because the detector has missed too many heartbeats from it. This can happen when a 	(1) raylet crashes unexpectedly (OOM, etc.) 
+	(2) raylet has lagging heartbeats due to slow network or busy workload.
