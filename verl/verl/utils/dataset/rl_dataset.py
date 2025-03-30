@@ -194,17 +194,15 @@ class RLHFDataset(Dataset):
             width = row_dict.get('width', None)
             # sample video frames
             video_path = row_dict[self.mm_key]
-            if self.sampling_strategy == 'random':
-                sampled_frames, sampled_times = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy='random')
-            elif self.sampling_strategy == 'uniform':
-                sampled_frames, sampled_times = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy='uniform')
-            else:
-                # default to 'all' if no strategy is specified
-                sampled_frames, sampled_times = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy='all')
- 
+
+            sampled_frames, sampled_times = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy='random')
+            
+            row_dict["frames"] = sampled_frames
+            row_dict["times"] = sampled_times
+            row_dict["round"] = 1
+
             row_dict[self.mm_key] = [frame for frame in sampled_frames]
             prompt = generate_prompt(chat, sampled_times, max_frames=self.max_frames)
-
             chat = [
                 {
                     "role": "user",
