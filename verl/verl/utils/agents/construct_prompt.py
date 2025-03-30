@@ -1,4 +1,4 @@
-def generate_prompt(question, timestamps, max_frames=5):
+def generate_prompt(question, timestamps, n_turns=1, max_turns=5, max_frames=5):
     prompt = f"""
     You have a video with {len(timestamps)} frames (decoded at 1 fps).
     The sampled frame timestamps (in seconds) are: {timestamps}
@@ -6,7 +6,10 @@ def generate_prompt(question, timestamps, max_frames=5):
 
     {question}
 
+    Notice:
     If the available frames provide enough information, answer directly. Otherwise, specify which frames (in seconds) to add or remove to ensure the total does not exceed {max_frames} frames.
+    This is your {n_turns} turn of interaction, and you can interact up to {max_turns} times. Please finish your answer as quick as possible.
+    You can use the following guidelines to help you decide:
 
     Formatting Guidelines:
     - To add frames: +[frame1, frame2, ...]

@@ -850,8 +850,22 @@ class RayPPOTrainer(object):
                     with _timer('gen', timing_raw):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
                     print("======================")
-                    print(gen_batch_output)
+                    print(batch.non_tensor_batch.keys())
+                    print(gen_batch.non_tensor_batch.keys())
                     print("======================")
+                    prompt = self.tokenizer.batch_decode(
+                        gen_batch.batch['input_ids'], 
+                        skip_special_tokens=True
+                    )
+                    print(prompt)
+
+                    responses_str = self.tokenizer.batch_decode(
+                        gen_batch_output.batch['responses'], 
+                        skip_special_tokens=True
+                    )
+                    print(responses_str)
+                    # print(gen_batch_output)
+                    print("====================s==")
 
                     exit(0)
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:

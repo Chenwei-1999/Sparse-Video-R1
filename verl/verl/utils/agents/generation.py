@@ -81,6 +81,7 @@ class LLMGenerationManager:
             else: 
                 # rollings: (batch_size * rollout_n, sequence length)
                 gen_output = self.actor_rollout_wg.generate_sequences(rollings)
+                
                 # gen_output: (batch_size * rollout_n, sequence length)
             if step == self.max_turns - 1:
                 # Final generation
@@ -90,6 +91,11 @@ class LLMGenerationManager:
                 gen_output.batch['responses'], 
                 skip_special_tokens=True
             )
+            print(responses_str)
+            # the responses string looks like:
+            # [response to question 1, response to question 1, ...., 
+            #  response to question 2, response to question 2, ....,
+            #  ....]
             responses_str = self._process_answer_tag(responses_str)
             for idx in range(len(responses_str)):
                 response = responses_str[idx]
@@ -224,63 +230,64 @@ class LLMGenerationManager:
         # responses_str = [resp.split('</answer>')[0] + '</answer>' 
         #             if '</answer>' in resp else resp 
         #             for resp in responses_str]
-        responses_str = self._process_answer_tag(responses_str)
+        # responses_str = self._process_answer_tag(responses_str)
 
         responses = self._batch_tokenize(responses_str)
         return responses, responses_str
-    def _batch_tokenize(self, responses: List[str]) -> torch.Tensor:
-        """Tokenize a batch of responses."""
-        return self.tokenizer(
-            responses, 
-            add_special_tokens=False, 
-            return_tensors='pt', 
-            padding="longest"
-        )['input_ids']
-    @staticmethod
-    def _process_answer_tag(responses_str):
-        """
-        Process a list of response strings to keep only the first <answer></answer> tag pair
-        while preserving the rest of the string content.
+
+    # def _batch_tokenize(self, responses: List[str]) -> torch.Tensor:
+    #     """Tokenize a batch of responses."""
+    #     return self.tokenizer(
+    #         responses, 
+    #         add_special_tokens=False, 
+    #         return_tensors='pt', 
+    #         padding="longest"
+    #     )['input_ids']
+    # @staticmethod
+    # def _process_answer_tag(responses_str):
+    #     """
+    #     Process a list of response strings to keep only the first <answer></answer> tag pair
+    #     while preserving the rest of the string content.
         
-        Args:
-            responses_str (List[str]): List of response strings potentially containing answer tags
+    #     Args:
+    #         responses_str (List[str]): List of response strings potentially containing answer tags
             
-        Returns:
-            List[str]: Processed responses with only first answer tag pair preserved
-        """
-        def process_single_response(text):
-            match = re.search(r'<answer>(.*?)</answer>', text)
+    #     Returns:
+    #         List[str]: Processed responses with only first answer tag pair preserved
+    #     """
+    #     def process_single_response(text):
+    #         match = re.search(r'<answer>(.*?)</answer>', text)
             
-            if not match:
-                return -1  # No <answer> tag found
+    #         if not match:
+    #             return -1  # No <answer> tag found
 
-            answer_content = match.group(1).strip()
+    #         answer_content = match.group(1).strip()
 
-            # Case 1: Direct numeric answer in the range 0-4
-            if answer_content in ["0", "1", "2", "3", "4"]:
-                return int(answer_content)
+    #         # Case 1: Direct numeric answer in the range 0-4
+    #         if answer_content in ["0", "1", "2", "3", "4"]:
+    #             return int(answer_content)
             
-            # Case 2: Extracting frame modifications in the format +[x,y,z]-[a,b]
-            add_match = re.search(r'\+\[(.*?)\]', answer_content)
-            remove_match = re.search(r'\-\[(.*?)\]', answer_content)
+    #         # Case 2: Extracting frame modifications in the format +[x,y,z]-[a,b]
+    #         add_match = re.search(r'\+\[(.*?)\]', answer_content)
+    #         remove_match = re.search(r'\-\[(.*?)\]', answer_content)
 
-            def extract_numbers(text):
-                """Extract valid integers from a comma-separated string, ignoring non-numeric values."""
-                if not text:
-                    return []
-                return [int(num) for num in re.findall(r'\b\d+\b', text)]  # Extracts only valid numbers
+    #         def extract_numbers(text):
+    #             """Extract valid integers from a comma-separated string, ignoring non-numeric values."""
+    #             if not text:
+    #                 return []
+    #             return [int(num) for num in re.findall(r'\b\d+\b', text)]  # Extracts only valid numbers
 
-            add_frames = extract_numbers(add_match.group(1)) if add_match else []
-            remove_frames = extract_numbers(remove_match.group(1)) if remove_match else []
+    #         add_frames = extract_numbers(add_match.group(1)) if add_match else []
+    #         remove_frames = extract_numbers(remove_match.group(1)) if remove_match else []
 
-            # If no valid frames were found, return -1
-            if not add_frames and not remove_frames:
-                return -1
+    #         # If no valid frames were found, return -1
+    #         if not add_frames and not remove_frames:
+    #             return -1
 
-            return {"add": add_frames, "remove": remove_frames}
+    #         return {"add": add_frames, "remove": remove_frames}
         
-        # Process each response string
-        return [process_single_response(resp) for resp in responses_str]
+    #     # Process each response string
+    #     return [process_single_response(resp) for resp in responses_str]
     
 
     def _compose_final_output(self, left_side: Dict,

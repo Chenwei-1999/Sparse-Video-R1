@@ -13,7 +13,7 @@
 # limitations under the License.
 # from . import gsm8k, math, prime_math, prime_code
 
-
+from verl.utils import agents
 def _default_compute_score(data_source, solution_str, ground_truth, extra_info=None):
     if data_source == 'openai/gsm8k':
         from . import gsm8k
@@ -41,6 +41,8 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
     elif data_source in ['hiyouga/geometry3k']:
         from . import geo3k
         res = geo3k.compute_score(solution_str, ground_truth)
+    elif data_source in ['video']:
+        res = agents.reward_function.compute_score(solution_str, ground_truth, extra_info)
     else:
         raise NotImplementedError
 

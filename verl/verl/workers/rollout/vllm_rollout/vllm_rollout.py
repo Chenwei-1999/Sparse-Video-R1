@@ -97,11 +97,6 @@ class vLLMRollout(BaseRollout):
         if max_num_batched_tokens < max_model_len and self.config.enable_chunked_prefill:
             raise ValueError('Enable chunked prefill, max_num_batched_tokens is smaller than max_model_len, \
                              please increase max_num_batched_tokens or disable chunked prefill')
-        print('=' * 20)
-        print('=' * 20)
-        print(config.limit_mm_per_prompt)
-        print('=' * 20)
-        print('=' * 20)
 
         self.inference_engine = LLM(
             actor_module,

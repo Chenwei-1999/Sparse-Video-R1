@@ -51,7 +51,7 @@ def sample_video_frames(video_path, height, width, num_frames=5, strategy='unifo
         raise ValueError("Video too short or FPS too high to sample at 1fps.")
 
     if strategy == 'random':
-        sampled_indices = random.sample(one_fps_frames, min(num_frames, len(one_fps_frames)))
+        sampled_indices = sorted(random.sample(one_fps_frames, min(num_frames, len(one_fps_frames))))
     elif strategy == 'uniform':
         if len(one_fps_frames) <= num_frames:
             sampled_indices = one_fps_frames
@@ -104,7 +104,7 @@ def sample_video_frames(video_path, height, width, num_frames=5, strategy='unifo
         sampled_frames.append(frame_info)
         timestamp = round(frame_id / fps, 1)
         sampled_times.append(timestamp)
-
+    # sort f
     cap.release()
     return sampled_frames, sampled_times
 
