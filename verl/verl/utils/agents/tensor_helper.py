@@ -1,6 +1,3 @@
-# https://github.com/RAGEN-AI/RAGEN/blob/main/ragen/llm_agent/tensor_helper.py
-
-
 import torch
 from typing import Dict, Tuple, List
 from dataclasses import dataclass
@@ -9,8 +6,6 @@ from dataclasses import dataclass
 class TensorConfig:
     pad_token_id: int
     max_prompt_length: int
-    max_obs_length: int
-    max_start_length: int
 
 class TensorHelper:
     def __init__(self, config: TensorConfig):
@@ -56,6 +51,8 @@ class TensorHelper:
         """
         Pad responses for non-active examples with pad tokens.
         """
+        print(active_mask.sum().item(), "active examples")
+        print("Total responses:", responses.shape[0], "Active mask shape:", active_mask.shape)
         assert active_mask.sum() == responses.shape[0]
         # Create masked responses tensor
         batch_size = active_mask.shape[0]
