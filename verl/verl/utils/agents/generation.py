@@ -174,10 +174,10 @@ class LLMGenerationManager:
         for i in range(batch_size):
             # If the sample is done, skip updating (or copy previous state)
             if sampled_frames_batch[i] is None:
-                updated_input_ids.append(rollings.batch["input_ids"][i])
-                updated_attention_mask.append(rollings.batch["attention_mask"][i])
-                updated_position_ids.append(rollings.batch["position_ids"][i])
-                updated_raw_prompt_ids.append(rollings.non_tensor_batch["raw_prompt_ids"][i])
+                # updated_input_ids.append(rollings.batch["input_ids"][i])
+                # updated_attention_mask.append(rollings.batch["attention_mask"][i])
+                # updated_position_ids.append(rollings.batch["position_ids"][i])
+                # updated_raw_prompt_ids.append(rollings.non_tensor_batch["raw_prompt_ids"][i])
                 continue
 
             sample_question = questions[i]
