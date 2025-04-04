@@ -92,6 +92,7 @@ class RLHFDataset(Dataset):
                  cache_dir='~/.cache/verl/rlhf',
                  chat_template_func=None,
                  max_frames=5,
+                 max_rounds=5,
                  sampling_strategy=None,
                  return_raw_chat=False,
                  truncation='error',
@@ -114,8 +115,9 @@ class RLHFDataset(Dataset):
         self.chat_template_func = chat_template_func
         self.truncation = truncation
         self.filter_overlong_prompts = filter_overlong_prompts
-        print(f'sampling strategy: {sampling_strategy}, max frames: {max_frames}')
+        print(f'sampling strategy: {sampling_strategy}, max frames: {max_frames}, max rounds: {max_rounds}')
         self.max_frames = max_frames
+        self.max_rounds = max_rounds
         self.sampling_strategy = sampling_strategy
         # whether to store the dataset in state_dict()
         # default not store
@@ -182,7 +184,7 @@ class RLHFDataset(Dataset):
         row_dict: dict = self.dataframe.iloc[item].to_dict()
 
         chat = row_dict.pop(self.prompt_key)
-
+        row_dict['question'] = chat
 
         is_multi_modal = self.mm_key in row_dict
         num_frames = self.max_frames
@@ -202,7 +204,10 @@ class RLHFDataset(Dataset):
             row_dict["round"] = 1
 
             row_dict[self.mm_key] = [frame for frame in sampled_frames]
-            prompt = generate_prompt(chat, sampled_times, max_frames=self.max_frames)
+            prompt = generate_prompt(question=chat, 
+                                     timestamps=sampled_times, 
+                                     max_rounds=self.max_rounds, 
+                                     max_frames=self.max_frames)
             chat = [
                 {
                     "role": "user",
@@ -219,7 +224,6 @@ class RLHFDataset(Dataset):
             image_inputs = self.processor.image_processor(row_dict['multi_modal_data']['image'], return_tensors='pt')
             image_grid_thw = image_inputs['image_grid_thw']
             row_dict['multi_modal_inputs'] = {key: val for key, val in image_inputs.items()}
-
             if image_grid_thw is not None:
                 merge_length = self.processor.image_processor.merge_size**2
                 index = 0
@@ -259,6 +263,9 @@ class RLHFDataset(Dataset):
         row_dict['attention_mask'] = attention_mask[0]
         row_dict['position_ids'] = position_ids[0]
         row_dict['raw_prompt_ids'] = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
+        row_dict['is_multi_modal'] = is_multi_modal
+        row_dict['video_path'] = video_path
+        
 
         # encode prompts without chat template
         if self.return_raw_chat:

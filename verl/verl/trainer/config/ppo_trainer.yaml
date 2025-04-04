@@ -4,9 +4,11 @@ data:
   val_files: ~/data/rlhf/gsm8k/test.parquet
   prompt_key: problem
   max_frames: 5
+  max_rounds: 5
   sampling_strategy: random
   max_prompt_length: 512
   max_response_length: 512
+  max_start_length: 256
   train_batch_size: 1024
   val_batch_size: null # DEPRECATED: Validation datasets are sent to inference engines as a whole batch, which will schedule the memory themselves
   return_raw_input_ids: False  # This should be set to true when the tokenizer between policy and rm differs
@@ -99,6 +101,7 @@ actor_rollout_ref:
     do_sample: True
     # number of responses (i.e. num sample times)
     n: 1 # > 1 for grpo
+    n_agent: 1 # different here used for agent tasks only
     val_kwargs:
       # sampling parameters for validation
       top_k: -1 # 0 for hf rollout, -1 for vllm rollout

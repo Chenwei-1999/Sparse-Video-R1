@@ -3,24 +3,16 @@ import random
 import base64
 from io import BytesIO
 from PIL import Image
+import os
+import re
+os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
+
 
 def encode_image_to_base64(image_bytes):
     return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
 
-import os
-os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
-import cv2
-import random
-from PIL import Image
-from io import BytesIO
 
-import cv2
-import random
-from PIL import Image
-from io import BytesIO
-import os, contextlib
-
-def sample_video_frames(video_path, height, width, num_frames=5, strategy='uniform'):
+def sample_video_frames(video_path, height=None, width=None, num_frames=5, strategy='uniform'):
     """
     Args:
         video_path (str): Path to the video file.
@@ -108,43 +100,82 @@ def sample_video_frames(video_path, height, width, num_frames=5, strategy='unifo
     cap.release()
     return sampled_frames, sampled_times
 
-def extract_frames_by_timestamps(video_path, timestamps):
+def sample_frames_from_next_obs(video_path: str, next_obs: str, height: int = None, width: int = None):
     """
-    Extract frames at given timestamps and return PHG-compatible image dicts.
+    Given a next_obs string that specifies the selected frames (for example,
+    "Selected frames: [2, 3, 4]"), sample those frames from the video using the
+    logic from sample_video_frames.
+
+    Args:
+        video_path (str): Path to the video file.
+        next_obs (str): A string representing the selected frames.
+                        Expected format: "Selected frames: [2, 3, 4]"
+        height (int or None): Desired height of the output image (None uses original).
+        width (int or None): Desired width of the output image (None uses original).
 
     Returns:
-        List[Dict]: Each dict has keys:
-            - 'image': base64-encoded JPEG string with prefix
-            - 'timestamp': original timestamp in seconds
+        List[Dict]: A list of dicts for each sampled frame, each containing:
+            - 'image': A base64-encoded JPEG string.
+            - 'timestamp': The timestamp (in seconds) corresponding to the frame.
     """
+    # Parse the next_obs string to extract the timestamps.
+    pattern = r'\[([^\]]+)\]'
+    match = re.search(pattern, next_obs)
+    if not match:
+        raise ValueError("Could not parse frame timestamps from next_obs: " + next_obs)
+    
+    frames_str = match.group(1)
+    # Convert the comma-separated values to floats.
+    timestamps = [float(x.strip()) for x in frames_str.split(',') if x.strip()]
+    
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise ValueError(f"Failed to open video: {video_path}")
+    
     fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps
-
-    sampled_times = []
+    if fps <= 0:
+        raise ValueError("Invalid or unreadable FPS value from video.")
     sampled_frames = []
+    sampled_times = []
     for ts in timestamps:
-        if ts < 0 or ts > duration:
-            print(f"Warning: timestamp {ts:.2f}s out of range, skipping.")
-            continue
-
+        # Convert the timestamp (in seconds) to a frame index.
         frame_idx = int(ts * fps)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         if not ret:
-            print(f"Warning: couldn't read frame at timestamp {ts:.2f}s")
             continue
-
+        
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(frame_rgb)
+        orig_width, orig_height = pil_img.size
+
+        # Resize the image if either height or width is provided.
+        if width is not None or height is not None:
+            if width is None:
+                ratio = height / float(orig_height)
+                new_width = int(orig_width * ratio)
+                new_height = height
+            elif height is None:
+                ratio = width / float(orig_width)
+                new_width = width
+                new_height = int(orig_height * ratio)
+            else:
+                new_width, new_height = width, height
+            pil_img = pil_img.resize((new_width, new_height))
+        else:
+            new_width, new_height = orig_width, orig_height
 
         buf = BytesIO()
         pil_img.save(buf, format='JPEG')
         image_bytes = buf.getvalue()
         buf.close()
 
-        sampled_frames.append(encode_image_to_base64(image_bytes))
-
+        frame_info = {
+            'image': encode_image_to_base64(image_bytes),
+            'timestamp': ts
+        }
+        sampled_frames.append(frame_info)
+    
     cap.release()
     return sampled_frames
+

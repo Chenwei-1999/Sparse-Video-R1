@@ -44,6 +44,7 @@ from verl.utils.tracking import ValidationGenerationsLogger
 from torch.utils.data import RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 
+from verl.utils.agents.generation import GenerationConfig, LLMGenerationManager
 WorkerType = Type[Worker]
 
 
@@ -553,6 +554,7 @@ class RayPPOTrainer(object):
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
 
+
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
             print('validation generation end')
@@ -643,26 +645,20 @@ class RayPPOTrainer(object):
             all_wg.update(spawn_wg)
             # keep the referece of WorkerDict to support ray >= 2.31. Ref: https://github.com/ray-project/ray/pull/45699
             self.wg_dicts.append(wg_dict)
-        print("spawn wg_dict")
         if self.use_critic:
             self.critic_wg = all_wg['critic']
             self.critic_wg.init_model()
-            print("init critic model")
         if self.use_reference_policy:
             self.ref_policy_wg = all_wg['ref']
             self.ref_policy_wg.init_model()
-            print("init ref_policy model")
 
         if self.use_rm:
             self.rm_wg = all_wg['rm']
             self.rm_wg.init_model()
-            print("init reward_model")
 
         # we should create rollout at the end so that vllm can have a better estimation of kv cache memory
         self.actor_rollout_wg = all_wg['actor_rollout']
-        print("create actor_rollout wg")
         self.actor_rollout_wg.init_model()
-        print("init actor_rollout model")
 
     def _save_checkpoint(self):
         # path: given_path + `/global_step_{global_steps}` + `/actor`
@@ -802,11 +798,24 @@ class RayPPOTrainer(object):
                           config=OmegaConf.to_container(self.config, resolve=True))
 
         self.global_steps = 0
-
+        gen_config = GenerationConfig(
+            max_rounds=self.config.data.get('max_rounds', 5),
+            max_frames=self.config.data.get('max_frames', 5),  # for video only
+            max_start_length=self.config.data.max_start_length,
+            max_prompt_length=self.config.data.max_prompt_length,
+            max_response_length=self.config.data.max_response_length,
+            num_gpus=self.config.trainer.n_gpus_per_node,
+            no_think_rl=True,
+        )
+        generation_manager = LLMGenerationManager(
+            tokenizer=self.tokenizer,
+            processor= self.processor,
+            actor_rollout_wg=self.actor_rollout_wg,
+            config=gen_config,
+            logger = logger,
+        )
         # load checkpoint before doing anything
-        print("loading checkpoint")
         self._load_checkpoint()
-        print("checkpoint loaded")
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
@@ -829,8 +838,13 @@ class RayPPOTrainer(object):
                 timing_raw = {}
 
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
+                batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n_agent, interleave=True)
+                print(batch.batch.keys())
                 # pop those keys for generation
-                if 'multi_modal_inputs' in batch.non_tensor_batch.keys():
+                print("data_source", batch.non_tensor_batch['data_source'])
+                if  "video" in batch.non_tensor_batch['data_source']:
+                    gen_batch = batch
+                elif 'multi_modal_inputs' in batch.non_tensor_batch.keys():
                     gen_batch = batch.pop(
                         batch_keys=['input_ids', 'attention_mask', 'position_ids'],
                         non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
@@ -848,31 +862,15 @@ class RayPPOTrainer(object):
                 with _timer('step', timing_raw):
                     # generate a batch
                     with _timer('gen', timing_raw):
-                        gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
-                    print("======================")
-                    print(batch.non_tensor_batch.keys())
-                    print(gen_batch.non_tensor_batch.keys())
-                    print("======================")
-                    prompt = self.tokenizer.batch_decode(
-                        gen_batch.batch['input_ids'], 
-                        skip_special_tokens=True
-                    )
-                    print(prompt)
-
-                    responses_str = self.tokenizer.batch_decode(
-                        gen_batch_output.batch['responses'], 
-                        skip_special_tokens=True
-                    )
-                    print(responses_str)
-                    # print(gen_batch_output)
-                    print("====================s==")
-
-                    exit(0)
+                        # gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                        gen_batch_output = generation_manager.run_llm_loop(gen_batch)
+     
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer('gen_max', timing_raw):
                             gen_baseline_batch = deepcopy(gen_batch)
                             gen_baseline_batch.meta_info['do_sample'] = False
-                            gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
+                            # gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
+                            gen_baseline_output = generation_manager.run_llm_loop(gen_baseline_batch)
 
                             batch = batch.union(gen_baseline_output)
                             reward_baseline_tensor = self.reward_fn(batch)
@@ -886,7 +884,7 @@ class RayPPOTrainer(object):
 
                     batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],
                                                              dtype=object)
-                    # repeat to align with repeated responses in rollout
+                    # # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
 
