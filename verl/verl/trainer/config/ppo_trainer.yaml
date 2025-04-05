@@ -170,7 +170,7 @@ reward_model:
   reward_manager: naive
 
 custom_reward_function:
-  path: /home/cxk2993/TinyZero/verl/verl/utils/agents/reward_function.py
+  path: /home/cxk2993/VideoR1/verl/verl/utils/agents/reward_function.py
   name: compute_score
 
 algorithm:

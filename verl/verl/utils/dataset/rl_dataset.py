@@ -185,7 +185,7 @@ class RLHFDataset(Dataset):
 
         chat = row_dict.pop(self.prompt_key)
         row_dict['question'] = chat
-
+      
         is_multi_modal = self.mm_key in row_dict
         num_frames = self.max_frames
 

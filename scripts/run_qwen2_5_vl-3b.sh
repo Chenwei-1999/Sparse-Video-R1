@@ -1,12 +1,12 @@
 set -x
 
-export HF_HOME=/shares/hlw3876/chenwei
+export HF_HOME=/scratch/cxk2993/hf_cache
 export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
-export DATA_DIR=/shares/hlw3876/chenwei/VLM-R1
+export DATA_DIR=/scratch/cxk2993/VLM-R1
 export ROLLOUT_TP_SIZE=2
 export EXPERIMENT_NAME=qwen2.5-3b
-export VLLM_ATTENTION_BACKEND=XFORMERS
+# export VLLM_ATTENTION_BACKEND=XFORMERS
 
 # python3 -m verl.trainer.main_ppo \
 #     algorithm.adv_estimator=grpo \
