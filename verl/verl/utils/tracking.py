@@ -27,14 +27,12 @@ class Tracking(object):
     def __init__(self, project_name, experiment_name, default_backend: Union[str, List[str]] = 'console', config=None):
         if isinstance(default_backend, str):
             default_backend = [default_backend]
-        print("debug line 1")
         for backend in default_backend:
             if backend == 'tracking':
                 import warnings
                 warnings.warn("`tracking` logger is deprecated. use `wandb` instead.", DeprecationWarning)
             else:
                 assert backend in self.supported_backend, f'{backend} is not supported'
-        print("debug line 2")
 
         self.logger = {}
 
@@ -44,14 +42,12 @@ class Tracking(object):
             wandb.init(project=project_name, name=experiment_name, config=config,  settings=wandb.Settings(start_method="thread"))
             print("wandb init")
             self.logger['wandb'] = wandb
-        print("debug line 3")
 
         if 'mlflow' in default_backend:
             import mlflow
             mlflow.start_run(run_name=experiment_name)
             mlflow.log_params(_compute_mlflow_params_from_objects(config))
             self.logger['mlflow'] = _MlflowLoggingAdapter()
-        print("debug line 4")
 
         if "swanlab" in default_backend:
             import swanlab
@@ -71,7 +67,6 @@ class Tracking(object):
                          logdir=SWANLAB_LOG_DIR,
                          mode=SWANLAB_MODE)
             self.logger["swanlab"] = swanlab
-        print("debug line 5")  
         if 'vemlp_wandb' in default_backend:
             import os
             import volcengine_ml_platform
@@ -89,16 +84,13 @@ class Tracking(object):
                 sync_tensorboard=True,
             )
             self.logger['vemlp_wandb'] = vemlp_wandb
-        print("debug line 6")  
 
         if 'tensorboard' in default_backend:
             self.logger['tensorboard'] = _TensorboardAdapter()
-        print("debug line 7")
         if 'console' in default_backend:
             from verl.utils.logger.aggregate_logger import LocalLogger
             self.console_logger = LocalLogger(print_to_console=True)
             self.logger['console'] = self.console_logger
-        print("debug line 8")
 
     def log(self, data, step, backend=None):
         for default_backend, logger_instance in self.logger.items():

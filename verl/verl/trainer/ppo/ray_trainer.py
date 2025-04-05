@@ -310,7 +310,20 @@ class RayPPOTrainer(object):
 
         self._validate_config()
         self._create_dataloader()
+        self._init_logger()
 
+    def _init_logger(self):
+        from verl.utils.tracking import Tracking
+        from omegaconf import OmegaConf
+        try:
+            container = OmegaConf.to_container(self.config, resolve=True, throw_on_missing=True)
+            print("Converted config:", container)
+        except Exception as e:
+            print("Error during OmegaConf conversion:", e)
+        self.logger = Tracking(project_name=self.config.trainer.project_name,
+                          experiment_name=self.config.trainer.experiment_name,
+                          default_backend=self.config.trainer.logger,
+                          config=OmegaConf.to_container(self.config, resolve=True))
     def _validate_config(self):
         config = self.config
         # number of GPUs total
@@ -513,7 +526,21 @@ class RayPPOTrainer(object):
         sample_inputs = []
         sample_outputs = []
         sample_scores = []
-
+        gen_config = GenerationConfig(
+            max_rounds=self.config.data.get('max_rounds', 5),
+            max_frames=self.config.data.get('max_frames', 5),  # for video only
+            max_prompt_length=self.config.data.max_prompt_length,
+            max_response_length=self.config.data.max_response_length,
+            num_gpus=self.config.trainer.n_gpus_per_node,
+            no_think_rl=True,
+        )
+        generation_manager = LLMGenerationManager(
+            tokenizer=self.tokenizer,
+            processor= self.processor,
+            actor_rollout_wg=self.actor_rollout_wg,
+            config=gen_config,
+            logger = self.logger,
+        )
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
 
@@ -530,9 +557,13 @@ class RayPPOTrainer(object):
             input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
             sample_inputs.extend(input_texts)
 
-            if 'multi_modal_inputs' in test_batch.non_tensor_batch.keys():
+            test_batch = test_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n_agent, interleave=True)
+            # pop those keys for generation
+            if  "video" in test_batch.non_tensor_batch['data_source']:
+                test_gen_batch = deepcopy(test_batch)
+            elif 'multi_modal_inputs' in test_batch.non_tensor_batch.keys():
                 test_gen_batch = test_batch.pop(
-                    batch_keys=['input_ids', 'attention_mask', 'position_ids'],
+                    batch_keys=['test_batch', 'attention_mask', 'position_ids'],
                     non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
                 )
             else:
@@ -551,19 +582,20 @@ class RayPPOTrainer(object):
             print(f'test_gen_batch meta info: {test_gen_batch.meta_info}')
 
             # pad to be divisible by dp_size
-            test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
-            test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
-
+            # test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
+            # test_output_gen_batch_padded = generation_manager.run_llm_loop(test_gen_batch_padded)
+            test_output_gen_batch = generation_manager.run_llm_loop(test_gen_batch)
 
             # unpad
-            test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
+            # test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
             print('validation generation end')
 
             # Store generated outputs
             output_ids = test_output_gen_batch.batch['responses']
             output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
             sample_outputs.extend(output_texts)
-
+            print(test_output_gen_batch.batch['position_ids'])
+            print(test_batch.batch['position_ids'])
             test_batch = test_batch.union(test_output_gen_batch)
 
             # evaluate using reward_function
@@ -598,9 +630,7 @@ class RayPPOTrainer(object):
     def init_workers(self):
         """Init resource pool and worker group"""
         self.resource_pool_manager.create_resource_pool()
-        print("create_resource_pool")
         self.resource_pool_to_cls = {pool: {} for pool in self.resource_pool_manager.resource_pool_dict.values()}
-        print("create resource pool dict")
         # create actor and rollout
         if self.hybrid_engine:
             resource_pool = self.resource_pool_manager.get_resource_pool(Role.ActorRollout)
@@ -610,7 +640,6 @@ class RayPPOTrainer(object):
             self.resource_pool_to_cls[resource_pool]['actor_rollout'] = actor_rollout_cls
         else:
             raise NotImplementedError
-        print("create actor_rollout")
         # create critic
         if self.use_critic:
             resource_pool = self.resource_pool_manager.get_resource_pool(Role.Critic)
@@ -782,26 +811,11 @@ class RayPPOTrainer(object):
         The driver process only need to call the compute functions of the worker group through RPC to construct the PPO dataflow.
         The light-weight advantage computation is done on the driver process.
         """
-        from verl.utils.tracking import Tracking
-        from omegaconf import OmegaConf
-        print("init tracking")
-        print(f"use critic {self.use_critic}")
-        try:
-            container = OmegaConf.to_container(self.config, resolve=True, throw_on_missing=True)
-            print("Converted config:", container)
-        except Exception as e:
-            print("Error during OmegaConf conversion:", e)
-        
-        logger = Tracking(project_name=self.config.trainer.project_name,
-                          experiment_name=self.config.trainer.experiment_name,
-                          default_backend=self.config.trainer.logger,
-                          config=OmegaConf.to_container(self.config, resolve=True))
 
         self.global_steps = 0
         gen_config = GenerationConfig(
             max_rounds=self.config.data.get('max_rounds', 5),
             max_frames=self.config.data.get('max_frames', 5),  # for video only
-            max_start_length=self.config.data.max_start_length,
             max_prompt_length=self.config.data.max_prompt_length,
             max_response_length=self.config.data.max_response_length,
             num_gpus=self.config.trainer.n_gpus_per_node,
@@ -812,7 +826,7 @@ class RayPPOTrainer(object):
             processor= self.processor,
             actor_rollout_wg=self.actor_rollout_wg,
             config=gen_config,
-            logger = logger,
+            logger = self.logger,
         )
         # load checkpoint before doing anything
         self._load_checkpoint()
@@ -821,7 +835,7 @@ class RayPPOTrainer(object):
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
             val_metrics = self._validate()
             pprint(f'Initial validation metrics: {val_metrics}')
-            logger.log(data=val_metrics, step=self.global_steps)
+            self.logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get('val_only', False):
                 return
 
@@ -839,11 +853,9 @@ class RayPPOTrainer(object):
 
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
                 batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n_agent, interleave=True)
-                print(batch.batch.keys())
                 # pop those keys for generation
-                print("data_source", batch.non_tensor_batch['data_source'])
                 if  "video" in batch.non_tensor_batch['data_source']:
-                    gen_batch = batch
+                    gen_batch = deepcopy(batch)
                 elif 'multi_modal_inputs' in batch.non_tensor_batch.keys():
                     gen_batch = batch.pop(
                         batch_keys=['input_ids', 'attention_mask', 'position_ids'],
@@ -885,7 +897,7 @@ class RayPPOTrainer(object):
                     batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],
                                                              dtype=object)
                     # # repeat to align with repeated responses in rollout
-                    batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
+                    # batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
 
                     ####################
@@ -983,7 +995,7 @@ class RayPPOTrainer(object):
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
                 # TODO: make a canonical logger that supports various backend
-                logger.log(data=metrics, step=self.global_steps)
+                self.logger.log(data=metrics, step=self.global_steps)
 
                 if is_last_step:
                     pprint(f'Final validation metrics: {last_val_metrics}')

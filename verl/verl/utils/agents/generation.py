@@ -11,6 +11,7 @@ from .construct_prompt import generate_prompt
 from verl import DataProto
 from verl.utils.tracking import Tracking
 import verl.utils.torch_functional as verl_F
+from copy import deepcopy
 
 from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
@@ -45,7 +46,6 @@ def process_image(image, max_pixels: int = 2048 * 2048, min_pixels: int = 512 * 
 class GenerationConfig:
     max_rounds: int
     max_frames: int
-    max_start_length: int
     max_prompt_length: int 
     max_response_length: int
     num_gpus: int
@@ -68,7 +68,6 @@ class LLMGenerationManager:
         self.is_validation = is_validation
         self.max_rounds = config.max_rounds
         self.max_frames = config.max_frames
-        self.max_start_length = config.max_start_length
         self.no_think_rl = config.no_think_rl
         self.num_gpus = config.num_gpus
         self.tensor_fn = TensorHelper(TensorConfig(
@@ -80,21 +79,30 @@ class LLMGenerationManager:
     
     def run_llm_loop(self, gen_batch,
                     ) -> Tuple[Dict, Dict]:
-        rollings = gen_batch
+        rollings = deepcopy(gen_batch)
         questions = [rollings.non_tensor_batch.get("question")[i] for i in range(rollings.batch['input_ids'].shape[0])]
 
         active_mask = torch.ones(gen_batch.batch['input_ids'].shape[0], dtype=torch.bool)
         active_num_list = [active_mask.sum().item()]
-        # original_left_side = {'input_ids': gen_batch.batch['input_ids'][:, -self.max_start_length:]}
-        # original_right_side = {'responses': gen_batch.batch['input_ids'][:, []]}
+        original_inputs= {'input_ids': gen_batch.batch['input_ids'], 
+                          'position_ids': gen_batch.batch['attention_mask'],  # position_ids are same as attention_mask in this context
+                          'attention_mask': gen_batch.batch['attention_mask'],
+                          'multi_modal_inputs': gen_batch.non_tensor_batch.get("multi_modal_inputs", None), 
+                          'raw_prompt_ids': gen_batch.non_tensor_batch.get("raw_prompt_ids", None),
+                          'multi_modal_data': gen_batch.non_tensor_batch.get("multi_modal_data", None),}
         # Main generation loop
         for step in range(self.max_rounds):
             if not active_mask.sum():
                 break
-            rollings_active = DataProto.from_dict({
-                k: v[active_mask] for k, v in rollings.batch.items()
+            rollings_active = DataProto.from_single_dict({
+                **{k: v[active_mask] for k, v in rollings.batch.items()},
+                **{k: v[active_mask] for k, v in rollings.non_tensor_batch.items()},
             })
+
             gen_output = self._generate_with_gpu_padding(rollings_active)
+            meta_info = gen_output.meta_info 
+            if step == self.max_rounds - 1:
+                break
             
             responses_ids, responses_str = self._postprocess_responses(gen_output.batch['responses'])
             responses_ids, responses_str = self.tensor_fn._example_level_pad(responses_ids, responses_str, active_mask)
@@ -136,9 +144,34 @@ class LLMGenerationManager:
                 new_times=new_times,
                 new_round=step + 1
             )
+        final_output  = {"responses": gen_output.batch['responses'],}
+        return self._compose_final_output(original_inputs, final_output, meta_info)
+        
+    def _compose_final_output(self, original_inputs: Dict,
+                              final_output: Dict,
+                              meta_info: Dict) -> Tuple[Dict, Dict]:
+        """Compose final generation output."""
 
-        return gen_output
+        # Preserve original 'responses' from final_output input
+        responses = final_output.get("responses", None)
+        if responses is None:
+            raise ValueError("Missing 'responses' in final_output")
 
+        # Add everything explicitly
+        final_output['responses'] = responses
+        final_output['input_ids'] = original_inputs['input_ids']
+        final_output['multi_modal_inputs'] = original_inputs.get('multi_modal_inputs', None)
+        final_output['multi_modal_data'] = original_inputs.get('multi_modal_data', None)
+        final_output['raw_prompt_ids'] = original_inputs.get('raw_prompt_ids', None)
+        final_output['attention_mask'] = original_inputs['attention_mask']
+        final_output['position_ids'] = original_inputs['position_ids']
+
+        final_output = DataProto.from_single_dict(final_output)
+        final_output.meta_info.update(meta_info)
+
+        return final_output
+
+    
     def update_rollings_state(self,
                               rollings,
                               questions: List[str],
@@ -164,10 +197,6 @@ class LLMGenerationManager:
         rollings.non_tensor_batch["previous_frames"] = prev_frames
         rollings.non_tensor_batch["previous_rounds"] = prev_rounds
 
-        updated_input_ids = []
-        updated_attention_mask = []
-        updated_position_ids = []
-        updated_raw_prompt_ids = []
 
         is_multi_modal = rollings.non_tensor_batch.get("is_multi_modal", False)
 
@@ -248,8 +277,6 @@ class LLMGenerationManager:
             )
             if is_multi_modal:
                 from verl.models.transformers.qwen2_vl import get_rope_index
-                image_inputs = rollings.non_tensor_batch["multi_modal_inputs"]
-                image_grid_thw = image_inputs.get("image_grid_thw", None) if image_inputs is not None else None
                 pos_ids = get_rope_index(
                     self.processor,
                     input_ids=input_ids[0],
@@ -331,32 +358,6 @@ class LLMGenerationManager:
         
         return sampled_frames_batch
 
-        
-    # def _update_rolling_state(self, rollings, cur_responses: torch.Tensor, 
-    #                         next_obs_ids: torch.Tensor) -> Dict:
-    #     """Update rolling state with new responses and observations."""
-    #     # Concatenate and handle padding
-    #     new_input_ids = self.tensor_fn.concatenate_with_padding([
-    #         rollings.batch['input_ids'],
-    #         cur_responses,
-    #         next_obs_ids
-    #     ])
-        
-    #     # Create attention mask and position ids
-    #     new_attention_mask = self.tensor_fn.create_attention_mask(new_input_ids)
-    #     new_position_ids = self.tensor_fn.create_position_ids(new_attention_mask)
-
-    #     # Cut to appropriate length
-    #     effective_len = new_attention_mask.sum(dim=1).max()
-    #     max_len = min(self.config.max_prompt_length, effective_len)
-        
-    #     return DataProto.from_dict({
-    #         'input_ids': new_input_ids[:, -max_len:],
-    #         'position_ids': new_position_ids[:, -max_len:],
-    #         'attention_mask': new_attention_mask[:, -max_len:]
-    #     })
-    
-
     def _process_next_obs(self, next_obs: List[str]) -> torch.Tensor:
         """Process next observations from environment."""
         next_obs_ids = self.tokenizer(
@@ -377,29 +378,35 @@ class LLMGenerationManager:
             if active_batch size is not divisible by num_gpus, pad with first sequence
             then remove padding from output
         """
+        print(active_batch.batch.keys())
+        print(active_batch.non_tensor_batch.keys())
+        gen_batch = active_batch.pop(
+                        batch_keys=['input_ids', 'attention_mask', 'position_ids'],
+                        non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
+                    )
         num_gpus = self.num_gpus
         if num_gpus <= 1:
-            return self.actor_rollout_wg.generate_sequences(active_batch)
+            return self.actor_rollout_wg.generate_sequences(gen_batch)
             
-        batch_size = active_batch.batch['input_ids'].shape[0]
+        batch_size = gen_batch.batch['input_ids'].shape[0]
         remainder = batch_size % num_gpus
         
         if remainder == 0:
-            return self.actor_rollout_wg.generate_sequences(active_batch)
+            return self.actor_rollout_wg.generate_sequences(gen_batch)
             
         # Add padding sequences
         padding_size = num_gpus - remainder
         padded_batch = {}
         
-        for k, v in active_batch.batch.items():
+        for k, v in gen_batch.batch.items():
             # Use first sequence as padding template
             pad_sequence = v[0:1].repeat(padding_size, *[1] * (len(v.shape) - 1))
             padded_batch[k] = torch.cat([v, pad_sequence], dim=0)
             
-        padded_active_batch = DataProto.from_dict(padded_batch)
+        padded_gen_batch = DataProto.from_dict(padded_batch)
         
         # Generate with padded batch
-        padded_output = self.actor_rollout_wg.generate_sequences(padded_active_batch)
+        padded_output = self.actor_rollout_wg.generate_sequences(padded_gen_batch)
         # Remove padding from output
         trimmed_batch = {k: v[:-padding_size] for k, v in padded_output.batch.items()}
         
@@ -416,29 +423,29 @@ class LLMGenerationManager:
         padded_output.batch = trimmed_batch['attention_mask', 'input_ids', 'position_ids']
         return padded_output
      
-    def _update_rolling_state(self, rollings, cur_responses: torch.Tensor, 
-                            next_obs_ids: torch.Tensor) -> Dict:
-        """Update rolling state with new responses and observations."""
-        # Concatenate and handle padding
-        new_input_ids = self.tensor_fn.concatenate_with_padding([
-            rollings.batch['input_ids'],
-            cur_responses,
-            next_obs_ids
-        ])
+    # def _update_rolling_state(self, rollings, cur_responses: torch.Tensor, 
+    #                         next_obs_ids: torch.Tensor) -> Dict:
+    #     """Update rolling state with new responses and observations."""
+    #     # Concatenate and handle padding
+    #     new_input_ids = self.tensor_fn.concatenate_with_padding([
+    #         rollings.batch['input_ids'],
+    #         cur_responses,
+    #         next_obs_ids
+    #     ])
         
-        # Create attention mask and position ids
-        new_attention_mask = self.tensor_fn.create_attention_mask(new_input_ids)
-        new_position_ids = self.tensor_fn.create_position_ids(new_attention_mask)
+    #     # Create attention mask and position ids
+    #     new_attention_mask = self.tensor_fn.create_attention_mask(new_input_ids)
+    #     new_position_ids = self.tensor_fn.create_position_ids(new_attention_mask)
 
-        # Cut to appropriate length
-        effective_len = new_attention_mask.sum(dim=1).max()
-        max_len = min(self.max_prompt_length, effective_len)
+    #     # Cut to appropriate length
+    #     effective_len = new_attention_mask.sum(dim=1).max()
+    #     max_len = min(self.max_prompt_length, effective_len)
         
-        return DataProto.from_dict({
-            'input_ids': new_input_ids[:, -max_len:],
-            'position_ids': new_position_ids[:, -max_len:],
-            'attention_mask': new_attention_mask[:, -max_len:]
-        })
+    #     return DataProto.from_dict({
+    #         'input_ids': new_input_ids[:, -max_len:],
+    #         'position_ids': new_position_ids[:, -max_len:],
+    #         'attention_mask': new_attention_mask[:, -max_len:]
+    #     })
 
     
     def _postprocess_responses(self, responses: torch.Tensor) -> torch.Tensor:
@@ -514,33 +521,6 @@ class LLMGenerationManager:
         return [process_single_response(resp) for resp in responses_str]
 
 
-    def _compose_final_output(self, left_side: Dict,
-                            right_side: Dict,
-                            meta_info: Dict) -> Tuple[Dict, Dict]:
-        """Compose final generation output."""
-        final_output = right_side.copy()
-        final_output['prompts'] = left_side['input_ids']
-        
-        # Combine input IDs
-        final_output['input_ids'] = torch.cat([
-            left_side['input_ids'],
-            right_side['responses']
-        ], dim=1)
-        
-        # Create attention mask and position ids
-        final_output['attention_mask'] = torch.cat([
-            self.tensor_fn.create_attention_mask(left_side['input_ids']),
-            self.tensor_fn.create_attention_mask(final_output['responses'])
-        ], dim=1)
-        
-        final_output['position_ids'] = self.tensor_fn.create_position_ids(
-            final_output['attention_mask']
-        )
-        
-        final_output = DataProto.from_dict(final_output)
-        final_output.meta_info.update(meta_info)
-        
-        return final_output
     
     def execute_predictions(self, responses_str: List[str], current_frames_list: List[List[int]]) -> Tuple[List[str], List[bool]]:
         """

@@ -72,7 +72,7 @@ def extract_solution(solution_str):
 
 def compute_score(data_source, solution_str, ground_truth, extra_info=None,
                   format_score=0.0, correct_answer_score=1.0,
-                  modification_score=0.1, error_score=-1.0):
+                  modification_score=0.1, error_score=-1.0, mode='train'):
     """
     Computes the score based on the solution string, ground truth, and rules.
 
@@ -91,6 +91,7 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
             'frame_decay' (float): Decay factor for frames used (optional).
             'row_chat' (str): Raw chat log (optional, for debugging).
             'prompt' (str): Prompt used (optional, for debugging).
+            'type' (str): Type of the data source, val for validation data.
         format_score (float): Score for invalid format/answer/modification (Case 1). Defaults to 0.0.
         correct_answer_score (float): Base score for a correct answer (Case 3). Defaults to 1.0.
         modification_score (float): Score for a valid modification request (Case 2). Defaults to 0.1.
@@ -102,6 +103,7 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
     """
     if extra_info is None:
         extra_info = {}
+
 
     # Ensure necessary info is present for certain checks
     timestamps = extra_info.get('timestamps', None)
@@ -129,7 +131,14 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
 
 
     # --- Scoring Logic ---
-
+    if extra_info['type'] == 'val':
+        answer_str = str(extracted_value).strip()
+        ground_truth_str = str(ground_truth).strip()
+        if answer_str.lower() == ground_truth_str.lower():
+            return 1
+        else:
+            return 0
+        
     # Case 4: No <answer> tag found or other critical extraction error
     if extraction_type == 'error':
         # You might want finer control here based on the error message in extracted_value
@@ -151,7 +160,7 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
         ground_truth_str = str(ground_truth).strip()
 
         # Simple string comparison - adjust if more complex logic (e.g., numeric ranges) is needed
-        if answer_str == ground_truth_str:
+        if answer_str.lower() == ground_truth_str.lower():
             # Correct Answer! Start with the base score for correctness
             score = correct_answer_score # 1.0
 
