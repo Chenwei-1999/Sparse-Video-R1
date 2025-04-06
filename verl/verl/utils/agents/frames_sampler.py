@@ -103,37 +103,18 @@ def sample_video_frames(video_path, height=None, width=None, num_frames=5, strat
     cap.release()
     return sampled_frames, sampled_times
 
-def sample_frames_from_next_obs(video_path: str, next_obs: str, height: int = None, width: int = None, ratio=1.0) -> list:
+def sample_frames_from_next_obs(video_path: str, timestamps: list, height: int = None, width: int = None, ratio=1.0) -> list:
     """
-    Given a next_obs string that specifies the selected frames (for example,
-    "Selected frames: [2, 3, 4]"), sample those frames from the video using the
-    logic from sample_video_frames.
-
+    Sample frames from a video at specified timestamps.
     Args:
         video_path (str): Path to the video file.
-        next_obs (str): A string representing the selected frames.
-                        Expected format: "Selected frames: [2, 3, 4]"
+        timestamps (list): List of timestamps in seconds where frames should be sampled.
         height (int or None): Desired height of the output image (None uses original).
         width (int or None): Desired width of the output image (None uses original).
-
+        ratio (float): Scaling factor for width and height.
     Returns:
-        List[Dict]: A list of dicts for each sampled frame, each containing:
-            - 'image': A base64-encoded JPEG string.
-            - 'timestamp': The timestamp (in seconds) corresponding to the frame.
+        sampled_frames: List of dicts containing JPEG bytes and image dimensions.
     """
-    if width is not None:
-        width = ratio * width
-    if height is not None:
-        height = ratio * height
-    # Parse the next_obs string to extract the timestamps.
-    pattern = r'\[([^\]]+)\]'
-    match = re.search(pattern, next_obs)
-    if not match:
-        raise ValueError("Could not parse frame timestamps from next_obs: " + next_obs)
-    
-    frames_str = match.group(1)
-    # Convert the comma-separated values to floats.
-    timestamps = [float(x.strip()) for x in frames_str.split(',') if x.strip()]
     
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
