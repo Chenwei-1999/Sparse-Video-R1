@@ -430,6 +430,7 @@ class RayPPOTrainer(object):
                                          sampling_strategy=self.config.data.get('sampling_strategy', 'random'), # for video only
                                          truncation=self.config.data.get('truncation', 'error'),
                                          filter_overlong_prompts=self.config.data.filter_overlong_prompts)
+        print('train dataset created')
         assert self.train_dataset.truncation == self.config.data.get(
             'truncation', 'error'
         ), f'dataset truncation {self.train_dataset.truncation} must be the same as config {self.config.data.get("truncation", "error")}'
@@ -447,7 +448,7 @@ class RayPPOTrainer(object):
                                                    drop_last=True,
                                                    collate_fn=collate_fn,
                                                    sampler=sampler)
-
+        print('train dataloader created')
         self.val_dataset = RLHFDataset(dataset_files=self.config.data.val_files,
                                        tokenizer=self.tokenizer,
                                        processor=self.processor,
@@ -456,10 +457,11 @@ class RayPPOTrainer(object):
                                        max_prompt_length=self.config.data.max_prompt_length,
                                        filter_prompts=True,
                                        return_raw_chat=self.config.data.get('return_raw_chat', False),
-                                        max_frames=self.config.data.get('max_frames', 5), # for video only
-                                        sampling_strategy=self.config.data.get('sampling_strategy', 'random'), # for video only
+                                       max_frames=self.config.data.get('max_frames', 5), # for video only
+                                       sampling_strategy=self.config.data.get('sampling_strategy', 'random'), # for video only
                                        truncation=self.config.data.get('truncation', 'error'),
                                        filter_overlong_prompts=self.config.data.filter_overlong_prompts)
+        print('val dataset created')
         assert self.val_dataset.truncation == self.config.data.get(
             'truncation', 'error'
         ), f'dataset truncation {self.val_dataset.truncation} must be the same as config {self.config.data.get("truncation", "error")}'
@@ -467,16 +469,18 @@ class RayPPOTrainer(object):
             dataset=self.val_dataset,
             # Validation datasets are sent to inference engines as a whole batch,
             # which will schedule the memory themselves.
-            batch_size=len(self.val_dataset),
+            # batch_size=len(self.val_dataset),
+            batch_size=self.config.data.train_batch_size,
             num_workers=16,
             shuffle=False,
             drop_last=False,
             collate_fn=collate_fn)
+        print('val dataloader created')
 
         assert len(self.train_dataloader) >= 1
-        assert len(
-            self.val_dataloader
-        ) == 1, "Validation dataloader must have a single batch, which inference engines will schedule the memory themselves."
+        # assert len(
+        #     self.val_dataloader
+        # ) == 1, "Validation dataloader must have a single batch, which inference engines will schedule the memory themselves."
 
         print(f'Size of train dataloader: {len(self.train_dataloader)}')
 
@@ -583,23 +587,21 @@ class RayPPOTrainer(object):
 
             # pad to be divisible by dp_size
             # test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
-            # test_output_gen_batch_padded = generation_manager.run_llm_loop(test_gen_batch_padded)
-            test_output_gen_batch = generation_manager.run_llm_loop(test_gen_batch)
-
+            # final_gen_batch_output_padded = generation_manager.run_llm_loop(test_gen_batch_padded)
+            final_gen_batch_output = generation_manager.run_llm_loop(test_gen_batch)
+ 
             # unpad
-            # test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
+            # final_gen_batch_output = unpad_dataproto(final_gen_batch_output_padded, pad_size=pad_size)
             print('validation generation end')
 
             # Store generated outputs
-            output_ids = test_output_gen_batch.batch['responses']
+            output_ids = final_gen_batch_output.batch['responses']
             output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
             sample_outputs.extend(output_texts)
-            print(test_output_gen_batch.batch['position_ids'])
-            print(test_batch.batch['position_ids'])
-            test_batch = test_batch.union(test_output_gen_batch)
+            # test_batch = test_batch.union(final_gen_batch_output)
 
             # evaluate using reward_function
-            reward_tensor = self.val_reward_fn(test_batch)
+            reward_tensor = self.val_reward_fn(final_gen_batch_output)
 
             # Store scores
             scores = reward_tensor.sum(-1).cpu().tolist()
@@ -856,6 +858,8 @@ class RayPPOTrainer(object):
                 # pop those keys for generation
                 if  "video" in batch.non_tensor_batch['data_source']:
                     gen_batch = deepcopy(batch)
+                    batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'],
+                               non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'])
                 elif 'multi_modal_inputs' in batch.non_tensor_batch.keys():
                     gen_batch = batch.pop(
                         batch_keys=['input_ids', 'attention_mask', 'position_ids'],

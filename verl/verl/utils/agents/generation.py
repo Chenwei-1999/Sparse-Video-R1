@@ -76,56 +76,71 @@ class LLMGenerationManager:
         ))
         self.max_prompt_length = config.max_prompt_length
         self.truncation = 'error'
-    
-    def run_llm_loop(self, gen_batch,
-                    ) -> Tuple[Dict, Dict]:
+    def run_llm_loop(self, gen_batch) -> Tuple[Dict, Dict]:
+        # Make a deep copy of the input batch and save the original inputs.
         rollings = deepcopy(gen_batch)
-        questions = [rollings.non_tensor_batch.get("question")[i] for i in range(rollings.batch['input_ids'].shape[0])]
+        batch_size = rollings.batch['input_ids'].shape[0]
+        questions = [rollings.non_tensor_batch.get("question")[i] for i in range(batch_size)]
+        final_response_ids_list = [None] * batch_size
+        original_inputs = {
+            'input_ids': gen_batch.batch['input_ids'],
+            'position_ids': gen_batch.batch['position_ids'],
+            'attention_mask': gen_batch.batch['attention_mask'], 
+            'reward_model': gen_batch.non_tensor_batch['reward_model'],
+            'data_source': gen_batch.non_tensor_batch['data_source'], 
+            'extra_info': gen_batch.non_tensor_batch.get('extra_info', {}),
+        }
+        # Initialize global_indices to map active samples back to the original batch.
+        global_indices = list(range(batch_size))
+        active_num_list = [len(global_indices)]
+        meta_info = {}
 
-        active_mask = torch.ones(gen_batch.batch['input_ids'].shape[0], dtype=torch.bool)
-        active_num_list = [active_mask.sum().item()]
-        original_inputs= {'input_ids': gen_batch.batch['input_ids'], 
-                          'position_ids': gen_batch.batch['attention_mask'],  # position_ids are same as attention_mask in this context
-                          'attention_mask': gen_batch.batch['attention_mask'],
-                          'multi_modal_inputs': gen_batch.non_tensor_batch.get("multi_modal_inputs", None), 
-                          'raw_prompt_ids': gen_batch.non_tensor_batch.get("raw_prompt_ids", None),
-                          'multi_modal_data': gen_batch.non_tensor_batch.get("multi_modal_data", None),}
-        # Main generation loop
         for step in range(self.max_rounds):
-            if not active_mask.sum():
-                break
-            rollings_active = DataProto.from_single_dict({
-                **{k: v[active_mask] for k, v in rollings.batch.items()},
-                **{k: v[active_mask] for k, v in rollings.non_tensor_batch.items()},
-            })
-
-            gen_output = self._generate_with_gpu_padding(rollings_active)
-            meta_info = gen_output.meta_info 
-            if step == self.max_rounds - 1:
-                break
-            
+            # rollings already contains only the active samples.
+            # Generate responses for the active samples.
+            gen_output = self._generate_with_gpu_padding(rollings)
+            meta_info = gen_output.meta_info
             responses_ids, responses_str = self._postprocess_responses(gen_output.batch['responses'])
-            responses_ids, responses_str = self.tensor_fn._example_level_pad(responses_ids, responses_str, active_mask)
-
-            next_obs, dones = self.execute_predictions(
-                responses_str, 
-                rollings.non_tensor_batch.get("times")  # current_frames_list
+            # Here the active mask is all True because rollings represents active samples.
+            active_mask_round = torch.ones(len(global_indices), dtype=torch.bool)
+            responses_ids, responses_str = self.tensor_fn._example_level_pad(
+                responses_ids, responses_str, active_mask_round
             )
-            active_mask = torch.tensor([not done for done in dones], dtype=torch.bool)
-            active_num_list.append(active_mask.sum().item())
-            # print(f"current frames: {rollings.non_tensor_batch.get('times', [[]])}")
-            # print(f'actions taken: {responses_str}')
-            # print(f"Next obs: {next_obs}, dones: {dones}, active count: {active_mask.sum().item()} at step {step+1}/{self.max_rounds}")
 
+            # If this is the final round, record responses for all active samples.
+            if step == self.max_rounds - 1:
+                for i, global_idx in enumerate(global_indices):
+                    if final_response_ids_list[global_idx] is None:
+                        final_response_ids_list[global_idx] = gen_output.batch['responses'][i]
+                break
+
+            # Get current times for active samples; if missing, default to empty lists.
+            current_times = rollings.non_tensor_batch.get("times", [[] for _ in range(len(global_indices))])
+            # Execute predictions to get next observations and done flags.
+            next_obs, dones = self.execute_predictions(responses_str, current_times)
+            
+            # Record responses for samples that are done.
+            for i, done in enumerate(dones):
+                if done:
+                    global_idx = global_indices[i]
+                    final_response_ids_list[global_idx] = gen_output.batch['responses'][i]
+            
+            # Filter out done samples: update global_indices.
+            new_global_indices = [global_indices[i] for i, done in enumerate(dones) if not done]
+            if not new_global_indices:
+                # All samples are done; break out of the loop.
+                break
+            global_indices = new_global_indices
+            active_num_list.append(len(global_indices))
+
+            # Sample frames and update times.
             video_path = rollings.non_tensor_batch.get("video_path")
-            height = rollings.non_tensor_batch.get("height")  
+            height = rollings.non_tensor_batch.get("height")
             width = rollings.non_tensor_batch.get("width")
             sampled_frames_batch = self.sample_frames(video_path, next_obs, dones, height, width)
-            current_times = rollings.non_tensor_batch.get("times", [[]] * len(dones))
             new_times = []
             for i in range(len(dones)):
                 if not dones[i]:
-                    # Parse from obs
                     match = re.search(r'\[([^\]]+)\]', next_obs[i])
                     if match:
                         frames_str = match.group(1)
@@ -134,9 +149,14 @@ class LLMGenerationManager:
                         ts = current_times[i]  # fallback
                     new_times.append(ts)
                 else:
-                    # Done samples keep their current times
                     new_times.append(current_times[i])
-
+            print('step:', step)
+            # Update the rollings state for the remaining active samples.
+            # Since rollings already represents the active subset, we update it directly.
+            rollings = DataProto.from_single_dict({
+                **{k: v for k, v in rollings.batch.items()},
+                **{k: v for k, v in rollings.non_tensor_batch.items()},
+            })
             rollings = self.update_rollings_state(
                 rollings,
                 questions=questions,
@@ -144,28 +164,47 @@ class LLMGenerationManager:
                 new_times=new_times,
                 new_round=step + 1
             )
-        final_output  = {"responses": gen_output.batch['responses'],}
-        return self._compose_final_output(original_inputs, final_output, meta_info)
+            # (Assume update_rollings_state returns the updated active subset.)
+            
+        # For any samples that never finished (if any remain), you can define a fallback.
+        # Here, we simply fill in any missing responses with the last available response.
+        for idx in range(batch_size):
+            if final_response_ids_list[idx] is None:
+                # Fallback: choose the first response from the last generation.
+                final_response_ids_list[idx] = gen_output.batch['responses'][0]
+
+        final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
+        return self._compose_final_output(original_inputs, final_response_ids_tensor, meta_info)
+
         
     def _compose_final_output(self, original_inputs: Dict,
-                              final_output: Dict,
+                              responses: torch.Tensor,
                               meta_info: Dict) -> Tuple[Dict, Dict]:
         """Compose final generation output."""
-
+        final_output = {}
         # Preserve original 'responses' from final_output input
-        responses = final_output.get("responses", None)
         if responses is None:
             raise ValueError("Missing 'responses' in final_output")
-
         # Add everything explicitly
+        final_output['prompts'] = original_inputs['input_ids']
         final_output['responses'] = responses
-        final_output['input_ids'] = original_inputs['input_ids']
-        final_output['multi_modal_inputs'] = original_inputs.get('multi_modal_inputs', None)
-        final_output['multi_modal_data'] = original_inputs.get('multi_modal_data', None)
-        final_output['raw_prompt_ids'] = original_inputs.get('raw_prompt_ids', None)
-        final_output['attention_mask'] = original_inputs['attention_mask']
-        final_output['position_ids'] = original_inputs['position_ids']
+    
+        final_output['input_ids'] = torch.cat([
+            original_inputs['input_ids'],
+            final_output['responses']
+        ], dim=1)
 
+        final_output['attention_mask'] = torch.cat([
+            self.tensor_fn.create_attention_mask(original_inputs['input_ids']),
+            self.tensor_fn.create_attention_mask(final_output['responses'])
+        ], dim=1)
+
+        final_output['position_ids'] = self.tensor_fn.create_position_ids(
+            final_output['attention_mask']
+        )
+        final_output['reward_model'] = original_inputs['reward_model']
+        final_output['data_source'] = original_inputs['data_source']
+        final_output['extra_info'] = original_inputs.get('extra_info', {})
         final_output = DataProto.from_single_dict(final_output)
         final_output.meta_info.update(meta_info)
 
@@ -231,13 +270,13 @@ class LLMGenerationManager:
             prompt_with_chat_template = self.tokenizer.apply_chat_template(
                 chat, add_generation_prompt=True, tokenize=False
             )
-            if is_multi_modal:
+            if is_multi_modal.any():
                 if sample_frames is not None:
                     raw_prompt = prompt_with_chat_template.replace(
                         '<image>',
                         '<|vision_start|><|image_pad|><|vision_end|>'
                     )
-                    processed_images = [process_image(frame_dict['image'])
+                    processed_images = [process_image(frame_dict)
                                         for frame_dict in sample_frames]
                     rollings.non_tensor_batch["multi_modal_data"] = {"image": processed_images}
                     image_inputs = self.processor.image_processor(
@@ -275,7 +314,7 @@ class LLMGenerationManager:
                 left_pad=True,
                 truncation=self.truncation
             )
-            if is_multi_modal:
+            if is_multi_modal.any():
                 from verl.models.transformers.qwen2_vl import get_rope_index
                 pos_ids = get_rope_index(
                     self.processor,
@@ -295,7 +334,6 @@ class LLMGenerationManager:
             rollings.batch["attention_mask"][i] = attention_mask[0]
             rollings.batch["position_ids"][i] = pos_ids[0]
             rollings.non_tensor_batch["raw_prompt_ids"][i] = self.tokenizer.encode(raw_prompt_final, add_special_tokens=False)
-            rollings.non_tensor_batch["raw_prompt"][i] = raw_prompt_final
             # rollings.batch["attention_mask"] = torch.stack(updated_attention_mask, dim=0)
             # rollings.batch["position_ids"] = torch.stack(updated_position_ids, dim=0)
             # rollings.non_tensor_batch["raw_prompt_ids"] = updated_raw_prompt_ids
@@ -378,8 +416,6 @@ class LLMGenerationManager:
             if active_batch size is not divisible by num_gpus, pad with first sequence
             then remove padding from output
         """
-        print(active_batch.batch.keys())
-        print(active_batch.non_tensor_batch.keys())
         gen_batch = active_batch.pop(
                         batch_keys=['input_ids', 'attention_mask', 'position_ids'],
                         non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
@@ -471,7 +507,6 @@ class LLMGenerationManager:
                     # If no answer tag is found, leave the response unchanged
                     processed.append(resp)
             responses_str = processed
-            print("Extracted answer tags:", responses_str)
         responses = self._batch_tokenize(responses_str)
         return responses, responses_str
 
