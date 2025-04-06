@@ -12,7 +12,7 @@ from verl import DataProto
 from verl.utils.tracking import Tracking
 import verl.utils.torch_functional as verl_F
 from copy import deepcopy
-
+from tensordict import TensorDict
 from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
 
@@ -93,8 +93,9 @@ class LLMGenerationManager:
         }
         rollings.non_tensor_batch['batch_indices'] = list(range(batch_size))
         rollings.non_tensor_batch["previous_times"] = [[gen_batch.non_tensor_batch['times'][i]] for i in range(batch_size)]
-        dones = [False] * batch_size # local indicator of whether each sample is done
-        rollings.non_tensor_batch['dones'] = dones # global dones for the current round
+        # dones is local for the current step, initialized to False
+        dones = [False] * batch_size 
+
         # Initialize global_indices to map active samples back to the original batch.
         meta_info = {}
         
@@ -106,11 +107,6 @@ class LLMGenerationManager:
 
             meta_info = gen_output.meta_info
             responses_ids, responses_str = self._postprocess_responses(gen_output.batch['responses'])
-            # Here the active mask is all True because rollings represents active samples.
-            active_mask_round = torch.ones(len(dones), dtype=torch.bool)
-            responses_ids, responses_str = self.tensor_fn._example_level_pad(
-                responses_ids, responses_str, active_mask_round
-            )
 
             # If this is the final round, record responses for all active samples.
             if step == self.max_rounds:
@@ -127,14 +123,13 @@ class LLMGenerationManager:
 
             # Execute predictions to get next observations and done flags.
             next_obs, dones = self.execute_predictions(responses_str, current_times)
-            
-            rollings.non_tensor_batch['dones'] = dones
+
             # Record responses for samples that are done.
             for i, idx in enumerate(rollings.non_tensor_batch['batch_indices']):
-                if rollings.non_tensor_batch['dones'][i]:
+                if dones[i]:
                     final_response_ids_list[idx] = gen_output.batch['responses'][i]
             # Filter out done samples: update global_indices.
-            if sum(rollings.non_tensor_batch['dones']) == len(dones):
+            if sum(dones) == len(dones):
                 # All samples are done, break the loop.
                 break
             # only keep things not done
@@ -153,10 +148,9 @@ class LLMGenerationManager:
                 new_times=next_obs,
                 new_round=step + 1
             )
-          
-        for i, response in enumerate(final_response_ids_list):
-            if response is None:
-                raise ValueError(f"Response for sample index {i} is missing!")
+            dones = [done for done in dones if not done]  # Keep only the not-done flags
+
+
         final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
         return self._compose_final_output(original_inputs, final_response_ids_tensor, meta_info)
 
@@ -211,32 +205,54 @@ class LLMGenerationManager:
                               new_times: List[List[float]],
                               new_round: int) -> "DataProto":
         """
-        only keep the not done samples in rollings and update their states.
+        Only keep the not-done samples in rollings and update their states.
+        (This version avoids converting non-tensor fields to NumPy arrays.)
         """
-        assert len(dones) == len(rollings.non_tensor_batch["times"]), "Mismatch in dones and rollings.non_tensor_batch['times'] length."
-        assert len(sampled_frames_batch) == len(new_times), "Mismatch in questions, dones, sampled_frames_batch, and new_times lengths."
+        # Check that the lengths match.
+        assert len(dones) == len(rollings.non_tensor_batch["times"]), \
+            "Mismatch in dones and rollings.non_tensor_batch['times'] length."
+        assert len(sampled_frames_batch) == len(new_times), \
+            "Mismatch in sampled_frames_batch and new_times lengths."
 
-        new_batch = {}
+        # Determine which samples to keep, only keep not done samples
+        to_keep = [not done for done in dones]
+
+        # Filter tensor fields.
+        tensor_batch = {}
         for k, v in rollings.batch.items():
-            new_batch[k] = [v[i] for i, done in enumerate(dones) if not done]
+            mask = torch.tensor(to_keep, dtype=torch.bool, device=v.device)
+            tensor_batch[k] = v[mask]
+
+        # Filter non-tensor fields without converting to numpy.
+        non_tensor_batch = {}
         for k, v in rollings.non_tensor_batch.items():
-            new_batch[k] = [v[i] for i, done in enumerate(dones) if not done]
+            # Here we assume that v is a list.
+            non_tensor_batch[k] = [item for item, keep in zip(v, to_keep) if keep]
 
-        rollings = DataProto.from_single_dict(new_batch)
+        # --- Instead of using DataProto.from_dict (which converts non_tensor_batch),
+        # we build a new DataProto manually.
+        #
+        # We use __new__ to bypass __post_init__ (which would enforce NumPy conversion)
+        new_rollings = DataProto.__new__(DataProto)
+        # Rebuild the tensor dict manually.
+        # (Assume that at least one key exists; adjust if needed.)
+        new_batch_size = tensor_batch[next(iter(tensor_batch))].shape[0] if tensor_batch else 0
+        new_rollings.batch = TensorDict(source=tensor_batch, batch_size=(new_batch_size,))
+        new_rollings.non_tensor_batch = non_tensor_batch
+        new_rollings.meta_info = rollings.meta_info
 
-        rollings.non_tensor_batch["previous_times"].append(rollings.non_tensor_batch["times"])
+        # --- Now update non-tensor fields for each remaining sample.
+        #
+        # Append the current times to previous_times.
+        new_rollings.non_tensor_batch["previous_times"].append(new_rollings.non_tensor_batch["times"])
         
-        # --- 1. Update non-tensor fields: times and round.
-        rollings.non_tensor_batch["times"] = new_times
-        is_multi_modal = rollings.non_tensor_batch['is_multi_modal'][0]
-
         batch_size = len(new_times)
-
         for i in range(batch_size):
-            sample_question = rollings.non_tensor_batch['question'][i]
+            sample_question = new_rollings.non_tensor_batch['question'][i]
             sample_times = new_times[i]
-            rollings.non_tensor_batch["previous_times"][i].append(sample_times)  # Append new times to previous times
-            sample_prev_times= rollings.non_tensor_batch["previous_times"][i]  # per-sample history
+            # Append the new times to the per-sample history.
+            new_rollings.non_tensor_batch["previous_times"][i].append(sample_times)
+            sample_prev_times = new_rollings.non_tensor_batch["previous_times"][i]
             prompt = generate_prompt(
                 question=sample_question,
                 timestamps=sample_times,
@@ -255,19 +271,19 @@ class LLMGenerationManager:
                 chat, add_generation_prompt=True, tokenize=False
             )
             
-            if is_multi_modal:  # Check if multi-modal input is needed
+            # If multi-modal input is needed, update the prompt and process images.
+            if new_rollings.non_tensor_batch['is_multi_modal'][0]:
                 raw_prompt = prompt_with_chat_template.replace(
                     '<image>',
                     '<|vision_start|><|image_pad|><|vision_end|>'
                 )
-                processed_images = [process_image(frame_dict)
-                                    for frame_dict in sample_frames]
-                rollings.non_tensor_batch["multi_modal_data"][i] = {"image": processed_images}
+                processed_images = [process_image(frame_dict) for frame_dict in sample_frames]
+                new_rollings.non_tensor_batch["multi_modal_data"][i] = {"image": processed_images}
                 image_inputs = self.processor.image_processor(
-                    rollings.non_tensor_batch["multi_modal_data"][i]["image"],
+                    new_rollings.non_tensor_batch["multi_modal_data"][i]["image"],
                     return_tensors='pt'
                 )
-                rollings.non_tensor_batch["multi_modal_inputs"][i] = {k: v for k, v in image_inputs.items()}
+                new_rollings.non_tensor_batch["multi_modal_inputs"][i] = {k: v for k, v in image_inputs.items()}
                 image_grid_thw = image_inputs.get("image_grid_thw", None)
                 if image_grid_thw is not None:
                     merge_length = self.processor.image_processor.merge_size ** 2
@@ -295,7 +311,7 @@ class LLMGenerationManager:
                 left_pad=True,
                 truncation=self.truncation
             )
-            if is_multi_modal:
+            if new_rollings.non_tensor_batch['is_multi_modal'][0]:
                 from verl.models.transformers.qwen2_vl import get_rope_index
                 pos_ids = get_rope_index(
                     self.processor,
@@ -306,14 +322,14 @@ class LLMGenerationManager:
             else:
                 pos_ids = compute_position_id_with_mask(attention_mask)
 
-                # Update each sample with padding to preserve shape.
-            rollings.batch["input_ids"][i] = input_ids[0]
-            rollings.batch["attention_mask"][i] = attention_mask[0]
-            rollings.batch["position_ids"][i] = pos_ids[0]
-            rollings.non_tensor_batch["raw_prompt_ids"][i] = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
+            # Update the tensor batch for sample i.
+            new_rollings.batch["input_ids"][i] = input_ids[0]
+            new_rollings.batch["attention_mask"][i] = attention_mask[0]
+            new_rollings.batch["position_ids"][i] = pos_ids[0]
+            new_rollings.non_tensor_batch["raw_prompt_ids"][i] = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
 
-        return rollings
-    
+        return new_rollings
+
     def sample_frames(self,
                       video_paths: List[str],
                       next_obs: List[str],
@@ -362,47 +378,79 @@ class LLMGenerationManager:
             next_obs_ids = next_obs_ids[:, :self.max_obs_length]
         return next_obs_ids
     
+
     def _generate_with_gpu_padding(self, active_batch: DataProto) -> DataProto:
         """
-            Wrapper for generation that handles multi-GPU padding requirements.
-            if num_gpus <= 1, return self.actor_rollout_wg.generate_sequences(active_batch)
-            if active_batch size is not divisible by num_gpus, pad with first sequence
-            then remove padding from output
+        Wrapper for generation that handles multi-GPU padding requirements.
+        If num_gpus <= 1, return self.actor_rollout_wg.generate_sequences(active_batch)
+        If active_batch size is not divisible by num_gpus, pad with first sequence
+        then remove padding from output.
         """
+        # Deep copy the active batch and pop the keys needed for generation.
         gen_batch = deepcopy(active_batch)
         gen_batch = gen_batch.pop(
-                        batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                        non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
-                    )
+            batch_keys=['input_ids', 'attention_mask', 'position_ids'],
+            non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
+        )
         num_gpus = self.num_gpus
         if num_gpus <= 1:
             return self.actor_rollout_wg.generate_sequences(gen_batch)
-            
+        
         batch_size = gen_batch.batch['input_ids'].shape[0]
         remainder = batch_size % num_gpus
-        
         if remainder == 0:
             return self.actor_rollout_wg.generate_sequences(gen_batch)
-            
-        # Add padding sequences
-        padding_size = num_gpus - remainder
-        padded_batch = {}
         
+        # Compute padding size.
+        padding_size = num_gpus - remainder
+
+        # Pad tensor fields.
+        padded_batch = {}
         for k, v in gen_batch.batch.items():
-            if v.ndim == 0 or v.shape[0] == 0:
-                raise ValueError(f"Tensor for key {k} is empty. Check your generation output.")
-            # Use first sequence as padding template
             pad_sequence = v[0:1].repeat(padding_size, *[1] * (len(v.shape) - 1))
             padded_batch[k] = torch.cat([v, pad_sequence], dim=0)
-            
-        padded_gen_batch = DataProto.from_dict(padded_batch)
-        
-        # Generate with padded batch
+
+        # Pad non-tensor fields.
+        padded_non_tensor = {}
+        for k, v in gen_batch.non_tensor_batch.items():
+            # Ensure v is a list.
+            if isinstance(v, np.ndarray):
+                v = list(v)
+            if isinstance(v, list):
+                padded_non_tensor[k] = v + [v[0]] * padding_size
+            else:
+                raise TypeError(f"Non-tensor field {k} must be a list or numpy array.")
+        # Convert padded non-tensor fields to np.ndarray with dtype=object.
+        padded_non_tensor = {k: np.array(v, dtype=object) for k, v in padded_non_tensor.items()}
+
+        # Rebuild DataProto manually to avoid unwanted conversion.
+        padded_gen_batch = DataProto.__new__(DataProto)
+        padded_gen_batch.batch = TensorDict(
+            source=padded_batch,
+            batch_size=(padded_batch["input_ids"].shape[0],)
+        )
+        padded_gen_batch.non_tensor_batch = padded_non_tensor
+        padded_gen_batch.meta_info = gen_batch.meta_info
+        # Generate sequences with the padded batch.
         padded_output = self.actor_rollout_wg.generate_sequences(padded_gen_batch)
-        # Remove padding from output
+        print(f"{padded_gen_batch.batch['input_ids'].shape[0]} sequences generated with padding, removing {padding_size} padding sequences.")
+        print(f"Generated sequences with padding: {batch_size} -> {padded_output.batch['responses'].shape[0]} sequences.")
+        # Remove padding from tensor fields for all keys.
         trimmed_batch = {k: v[:-padding_size] for k, v in padded_output.batch.items()}
+        print(f"Trimmed batch size: {len(trimmed_batch['responses'])} sequences after removing padding.")
+        padded_output.batch = trimmed_batch
         
-        # Handle meta_info if present
+        # Remove padding from non-tensor fields.
+        trimmed_non_tensor = {}
+        for k, v in padded_output.non_tensor_batch.items():
+            print("non_tensor_keys", k)
+            if isinstance(v, np.ndarray):
+                trimmed_non_tensor[k] = v[:-padding_size]
+            else:
+                trimmed_non_tensor[k] = v  # Fallback if not an array.
+        padded_output.non_tensor_batch = trimmed_non_tensor
+        
+        # Trim meta_info if needed.
         if hasattr(padded_output, 'meta_info') and padded_output.meta_info:
             trimmed_meta = {}
             for k, v in padded_output.meta_info.items():
@@ -411,11 +459,9 @@ class LLMGenerationManager:
                 else:
                     trimmed_meta[k] = v
             padded_output.meta_info = trimmed_meta
-            
-        padded_output.batch = padded_output.batch = {k: trimmed_batch[k] for k in ['attention_mask', 'input_ids', 'position_ids']}
+
         return padded_output
-     
-    
+
     def _postprocess_responses(self, responses: torch.Tensor) -> torch.Tensor:
         """Process responses to remove 1. multiple answers or 2. reward hacking attempts."""
         responses_str = self.tokenizer.batch_decode(
