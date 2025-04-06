@@ -70,9 +70,9 @@ def extract_solution(solution_str):
         return ('answer', content)
 
 
-def compute_score(data_source, solution_str, ground_truth, extra_info=None,
+def compute_score(data_source, solution_str, ground_truth, extra_info=None, iter_decay=0.9,
                   format_score=0.0, correct_answer_score=1.0,
-                  modification_score=0.1, error_score=-1.0, mode='train'):
+                  modification_score=0.5, error_score=-1.0, mode='train'):
     """
     Computes the score based on the solution string, ground truth, and rules.
 
@@ -84,13 +84,8 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
             'max_frames' (int): Maximum allowed frames. Required for modification checks.
             'current_turn' (int): The current turn number. Required for max_turns check.
             'max_turns' (int): The maximum number of turns allowed. Required for max_turns check.
-            'n_iter' (int): Number of iterations used (optional, for penalty).
-            'max_iter' (int): Max iterations allowed without penalty (optional).
-            'iter_decay' (float): Decay factor for iterations (optional).
             'n_frames' (int): Number of frames used (optional, for penalty, distinct from len(timestamps)).
             'frame_decay' (float): Decay factor for frames used (optional).
-            'row_chat' (str): Raw chat log (optional, for debugging).
-            'prompt' (str): Prompt used (optional, for debugging).
             'type' (str): Type of the data source, val for validation data.
         format_score (float): Score for invalid format/answer/modification (Case 1). Defaults to 0.0.
         correct_answer_score (float): Base score for a correct answer (Case 3). Defaults to 1.0.
@@ -122,8 +117,6 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
         print(f"Extracted Type: {extraction_type}")
         print(f"Extracted Value: {extracted_value} ({type(extracted_value).__name__})")
         print(f"Solution string: {solution_str}")
-        if 'row_chat' in extra_info: print(f"Raw Chat: \n {extra_info['row_chat']}")
-        if 'prompt' in extra_info: print(f"Prompt: \n {extra_info['prompt']}")
         # print(f"Solution string: {solution_str}")
         print(f"Max frames: {max_frames}")
         print(f"Current Turn: {current_turn}, Max Turns: {max_turns}")
@@ -161,33 +154,18 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
 
         # Simple string comparison - adjust if more complex logic (e.g., numeric ranges) is needed
         if answer_str.lower() == ground_truth_str.lower():
-            # Correct Answer! Start with the base score for correctness
-            score = correct_answer_score # 1.0
 
-            # Apply optional penalties for resource usage (iter/frames)
-            n_iter = extra_info.get("n_iter")
-            max_iter = extra_info.get("max_iter")
-            iter_decay = extra_info.get("iter_decay")
-            if n_iter and max_iter and iter_decay and iter_decay < 1.0:
-                iter_penalty_count = max(0, n_iter - max_iter)
-                score *= iter_decay ** iter_penalty_count
-
-            # Note: n_frames in extra_info might be different from len(timestamps)
-            # Use the one relevant for penalty calculation
-            n_frames_used = extra_info.get("n_frames")
-            frame_decay = extra_info.get("frame_decay")
-            # Using max_frames from extra_info as the threshold for frame penalty
-            if n_frames_used and max_frames and frame_decay and frame_decay < 1.0:
-                frame_penalty_count = max(0, n_frames_used - max_frames)
-                score *= frame_decay ** frame_penalty_count
-
-            return score # Case 3 (potentially penalized)
+            return correct_answer_score # Case 3 (potentially penalized)
         else:
             # Incorrect Answer
+            if current_turn > 0:
+                return modification_score
             return format_score # 0 (Case 1)
 
     # Case 2 & 1 (partially): Frame Modification Request
     if extraction_type == 'modify':
+        if current_turn > 0:
+            return modification_score
         # Need timestamps and max_frames to validate
         if timestamps is None or max_frames is None:
              print("DEBUG: Missing timestamps or max_frames for modification check - returning format_score") # Debug helper
@@ -196,6 +174,10 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None,
         added = extracted_value['add']
         removed = extracted_value['remove']
         current_frame_count = len(timestamps)
+        for r in removed:
+            if r not in timestamps:
+                return format_score  # Invalid removal request, frame not present in current timestamps
+            
         new_frame_count = current_frame_count + len(added) - len(removed)
 
         # --- Validation Checks for Modification ---

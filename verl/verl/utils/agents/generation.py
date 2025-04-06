@@ -95,7 +95,15 @@ class LLMGenerationManager:
         rollings.non_tensor_batch["previous_times"] = [[gen_batch.non_tensor_batch['times'][i]] for i in range(batch_size)]
         # dones is local for the current step, initialized to False
         dones = [False] * batch_size 
-
+# extra_info (dict, optional): Dictionary containing additional info like:
+#             'timestamps' (list): Current frame timestamps. Required for modification checks.
+#             'max_frames' (int): Maximum allowed frames. Required for modification checks.
+#             'current_turn' (int): The current turn number. Required for max_turns check.
+#             'max_turns' (int): The maximum number of turns allowed. Required for max_turns check.
+#             'iter_decay' (float): Decay factor for iterations (optional).
+#             'n_frames' (int): Number of frames used (optional, for penalty, distinct from len(timestamps)).
+#             'frame_decay' (float): Decay factor for frames used (optional).
+#             'type' (str): Type of the data source, val for validation data.
         # Initialize global_indices to map active samples back to the original batch.
         meta_info = {}
         
@@ -115,6 +123,12 @@ class LLMGenerationManager:
                 for i, idx in enumerate(rollings.non_tensor_batch['batch_indices']):
                     if final_response_ids_list[idx] is None:
                         final_response_ids_list[idx] = gen_output.batch['responses'][i]
+                        extra_info = {}
+                        extra_info['timestamps'] = rollings.non_tensor_batch['previous_times'][i][-1]  # last round timestamps
+                        extra_info['max_frames'] = self.max_frames
+                        extra_info['current_turn'] = step
+                        extra_info['max_turns'] = self.max_rounds
+                        original_inputs['extra_info'][i].update(extra_info)
                 break
 
             # Get current times for active samples; if missing, default to empty lists.
@@ -128,6 +142,13 @@ class LLMGenerationManager:
             for i, idx in enumerate(rollings.non_tensor_batch['batch_indices']):
                 if dones[i]:
                     final_response_ids_list[idx] = gen_output.batch['responses'][i]
+                    extra_info = {}
+                    extra_info['timestamps'] = rollings.non_tensor_batch['previous_times'][i][-1]  # last round timestamps
+                    extra_info['max_frames'] = self.max_frames
+                    extra_info['current_turn'] = step
+                    extra_info['max_turns'] = self.max_rounds
+                    original_inputs['extra_info'][i].update(extra_info)
+                    # extra_info['n_frames'] = len(rollings.non_tensor_batch['previous_times'][i][-1])
             # Filter out done samples: update global_indices.
             if sum(dones) == len(dones):
                 # All samples are done, break the loop.
@@ -148,7 +169,6 @@ class LLMGenerationManager:
                 new_times=next_obs,
                 new_round=step + 1
             )
-
 
         final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
         return self._compose_final_output(original_inputs, final_response_ids_tensor, meta_info)
