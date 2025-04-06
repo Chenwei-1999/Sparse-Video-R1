@@ -153,10 +153,6 @@ class LLMGenerationManager:
             print('step:', step)
             # Update the rollings state for the remaining active samples.
             # Since rollings already represents the active subset, we update it directly.
-            rollings = DataProto.from_single_dict({
-                **{k: v for k, v in rollings.batch.items()},
-                **{k: v for k, v in rollings.non_tensor_batch.items()},
-            })
             rollings = self.update_rollings_state(
                 rollings,
                 questions=questions,
@@ -416,7 +412,8 @@ class LLMGenerationManager:
             if active_batch size is not divisible by num_gpus, pad with first sequence
             then remove padding from output
         """
-        gen_batch = active_batch.pop(
+        gen_batch = deepcopy(active_batch)
+        gen_batch = gen_batch.pop(
                         batch_keys=['input_ids', 'attention_mask', 'position_ids'],
                         non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
                     )
