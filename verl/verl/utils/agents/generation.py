@@ -101,8 +101,9 @@ class LLMGenerationManager:
         for step in range(1, self.max_rounds+1):
             # rollings already contains only the active samples.
             # Generate responses for the active samples.
-   
+            
             gen_output = self._generate_with_gpu_padding(rollings)
+
             meta_info = gen_output.meta_info
             responses_ids, responses_str = self._postprocess_responses(gen_output.batch['responses'])
             # Here the active mask is all True because rollings represents active samples.
@@ -221,13 +222,16 @@ class LLMGenerationManager:
         for k, v in rollings.non_tensor_batch.items():
             new_batch[k] = [v[i] for i, done in enumerate(dones) if not done]
 
+        rollings = DataProto.from_single_dict(new_batch)
 
         rollings.non_tensor_batch["previous_times"].append(rollings.non_tensor_batch["times"])
         
         # --- 1. Update non-tensor fields: times and round.
         rollings.non_tensor_batch["times"] = new_times
+        is_multi_modal = rollings.non_tensor_batch['is_multi_modal'][0]
 
         batch_size = len(new_times)
+
         for i in range(batch_size):
             sample_question = rollings.non_tensor_batch['question'][i]
             sample_times = new_times[i]
@@ -250,71 +254,65 @@ class LLMGenerationManager:
             prompt_with_chat_template = self.tokenizer.apply_chat_template(
                 chat, add_generation_prompt=True, tokenize=False
             )
-            if True:  # Check if multi-modal input is needed
-                if sample_frames is not None:
-                    raw_prompt = prompt_with_chat_template.replace(
-                        '<image>',
-                        '<|vision_start|><|image_pad|><|vision_end|>'
-                    )
-                    processed_images = [process_image(frame_dict)
-                                        for frame_dict in sample_frames]
-                    rollings.non_tensor_batch["multi_modal_data"] = {"image": processed_images}
-                    image_inputs = self.processor.image_processor(
-                        rollings.non_tensor_batch["multi_modal_data"]["image"],
-                        return_tensors='pt'
-                    )
-                    rollings.non_tensor_batch["multi_modal_inputs"] = {k: v for k, v in image_inputs.items()}
-                    image_grid_thw = image_inputs.get("image_grid_thw", None)
-                    if image_grid_thw is not None:
-                        merge_length = self.processor.image_processor.merge_size ** 2
-                        index = 0
-                        while '<image>' in prompt_with_chat_template:
-                            prompt_with_chat_template = prompt_with_chat_template.replace(
-                                '<image>',
-                                '<|vision_start|>' +
-                                '<|placeholder|>' * (int(image_grid_thw[index].prod() // merge_length)) +
-                                '<|vision_end|>',
-                                1,
-                            )
-                            index += 1
-                        prompt_with_chat_template = prompt_with_chat_template.replace(
-                            '<|placeholder|>', self.processor.image_token
-                        )
-                    raw_prompt_final = raw_prompt
-                else:
-                    raw_prompt_final = prompt_with_chat_template
-            # else:
-            #     raw_prompt_final = prompt_with_chat_template
-
-                input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(
-                    prompt=prompt_with_chat_template,
-                    tokenizer=self.tokenizer,
-                    max_length=self.max_prompt_length,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    left_pad=True,
-                    truncation=self.truncation
+            
+            if is_multi_modal:  # Check if multi-modal input is needed
+                raw_prompt = prompt_with_chat_template.replace(
+                    '<image>',
+                    '<|vision_start|><|image_pad|><|vision_end|>'
                 )
-                if True:
-                    from verl.models.transformers.qwen2_vl import get_rope_index
-                    pos_ids = get_rope_index(
-                        self.processor,
-                        input_ids=input_ids[0],
-                        image_grid_thw=image_grid_thw,
-                        attention_mask=attention_mask[0]
+                processed_images = [process_image(frame_dict)
+                                    for frame_dict in sample_frames]
+                rollings.non_tensor_batch["multi_modal_data"][i] = {"image": processed_images}
+                image_inputs = self.processor.image_processor(
+                    rollings.non_tensor_batch["multi_modal_data"][i]["image"],
+                    return_tensors='pt'
+                )
+                rollings.non_tensor_batch["multi_modal_inputs"][i] = {k: v for k, v in image_inputs.items()}
+                image_grid_thw = image_inputs.get("image_grid_thw", None)
+                if image_grid_thw is not None:
+                    merge_length = self.processor.image_processor.merge_size ** 2
+                    index = 0
+                    while '<image>' in prompt_with_chat_template:
+                        prompt_with_chat_template = prompt_with_chat_template.replace(
+                            '<image>',
+                            '<|vision_start|>' +
+                            '<|placeholder|>' * (int(image_grid_thw[index].prod() // merge_length)) +
+                            '<|vision_end|>',
+                            1,
+                        )
+                        index += 1
+                    prompt_with_chat_template = prompt_with_chat_template.replace(
+                        '<|placeholder|>', self.processor.image_token
                     )
-                # else:
-                #     pos_ids = compute_position_id_with_mask(attention_mask)
+            else:
+                raw_prompt = prompt_with_chat_template
+
+            input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(
+                prompt=prompt_with_chat_template,
+                tokenizer=self.tokenizer,
+                max_length=self.max_prompt_length,
+                pad_token_id=self.tokenizer.pad_token_id,
+                left_pad=True,
+                truncation=self.truncation
+            )
+            if is_multi_modal:
+                from verl.models.transformers.qwen2_vl import get_rope_index
+                pos_ids = get_rope_index(
+                    self.processor,
+                    input_ids=input_ids[0],
+                    image_grid_thw=image_grid_thw,
+                    attention_mask=attention_mask[0]
+                )
+            else:
+                pos_ids = compute_position_id_with_mask(attention_mask)
 
                 # Update each sample with padding to preserve shape.
             rollings.batch["input_ids"][i] = input_ids[0]
             rollings.batch["attention_mask"][i] = attention_mask[0]
             rollings.batch["position_ids"][i] = pos_ids[0]
-            rollings.non_tensor_batch["raw_prompt_ids"][i] = self.tokenizer.encode(raw_prompt_final, add_special_tokens=False)
+            rollings.non_tensor_batch["raw_prompt_ids"][i] = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
 
         return rollings
-
-
-
     
     def sample_frames(self,
                       video_paths: List[str],
