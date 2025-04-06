@@ -13,12 +13,11 @@ def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5,
         max_rounds (int): The total number of rounds available (default is 5).
         max_frames (int): The maximum number of frames allowed (default is 5).
         previous_frames (list of tuple, optional): Each tuple contains the frames selected in that round.
-        previous_rounds (list of tuples, optional): Each tuple contains (add_frames, remove_frames) for rounds after the first.
     Returns:
         str: A formatted prompt string.
     """
     
-    def format_previous_history(previous_frames, previous_rounds):
+    def format_previous_history(previous_frames):
         """
         Format the history of previous rounds.
         
@@ -44,7 +43,7 @@ def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5,
                 lines.append(f"Round {i}: the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
         return "\n".join(lines)
 
-    previous_history_str = format_previous_history(previous_frames, previous_rounds)
+    previous_history_str = format_previous_history(previous_frames)
 
     prompt = textwrap.dedent(f"""
         You have a video with {len(timestamps)} frames (decoded at 1 fps).
