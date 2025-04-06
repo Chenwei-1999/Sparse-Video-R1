@@ -12,7 +12,7 @@ def encode_image_to_base64(image_bytes):
     return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
 
 
-def sample_video_frames(video_path, height=None, width=None, num_frames=5, strategy='uniform'):
+def sample_video_frames(video_path, height=None, width=None, num_frames=5, strategy='uniform', ratio=1.0):
     """
     Args:
         video_path (str): Path to the video file.
@@ -25,7 +25,10 @@ def sample_video_frames(video_path, height=None, width=None, num_frames=5, strat
         sampled_frames: List of dicts containing JPEG bytes and image dimensions.
         sampled_times: List of timestamps in seconds (rounded to 0.1).
     """
-
+    if width is not None:
+        width = int(ratio * width)
+    if height is not None:
+        height = int(ratio * height)
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
@@ -100,7 +103,7 @@ def sample_video_frames(video_path, height=None, width=None, num_frames=5, strat
     cap.release()
     return sampled_frames, sampled_times
 
-def sample_frames_from_next_obs(video_path: str, next_obs: str, height: int = None, width: int = None):
+def sample_frames_from_next_obs(video_path: str, next_obs: str, height: int = None, width: int = None, ratio=1.0) -> list:
     """
     Given a next_obs string that specifies the selected frames (for example,
     "Selected frames: [2, 3, 4]"), sample those frames from the video using the
@@ -118,6 +121,10 @@ def sample_frames_from_next_obs(video_path: str, next_obs: str, height: int = No
             - 'image': A base64-encoded JPEG string.
             - 'timestamp': The timestamp (in seconds) corresponding to the frame.
     """
+    if width is not None:
+        width = ratio * width
+    if height is not None:
+        height = ratio * height
     # Parse the next_obs string to extract the timestamps.
     pattern = r'\[([^\]]+)\]'
     match = re.search(pattern, next_obs)
@@ -171,8 +178,9 @@ def sample_frames_from_next_obs(video_path: str, next_obs: str, height: int = No
         buf.close()
 
         frame_info = {
-            'image': encode_image_to_base64(image_bytes),
-            'timestamp': ts
+            "bytes": image_bytes,
+            "width": new_width,
+            "height": new_height,
         }
         sampled_frames.append(frame_info)
     
