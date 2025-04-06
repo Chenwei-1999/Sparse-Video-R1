@@ -92,7 +92,7 @@ class LLMGenerationManager:
             'extra_info': gen_batch.non_tensor_batch.get('extra_info', {}),
         }
         rollings.non_tensor_batch['batch_indices'] = list(range(batch_size))
-
+        rollings.non_tensor_batch["previous_times"] = [[gen_batch.non_tensor_batch['times'][i]] for i in range(batch_size)]
         dones = [False] * batch_size # local indicator of whether each sample is done
         rollings.non_tensor_batch['dones'] = dones # global dones for the current round
         # Initialize global_indices to map active samples back to the original batch.
@@ -125,7 +125,7 @@ class LLMGenerationManager:
             current_times = rollings.non_tensor_batch['times']
 
             # Execute predictions to get next observations and done flags.
-            next_obs, dones, selections = self.execute_predictions(responses_str, current_times)
+            next_obs, dones = self.execute_predictions(responses_str, current_times)
             
             rollings.non_tensor_batch['dones'] = dones
             # Record responses for samples that are done.
@@ -141,7 +141,6 @@ class LLMGenerationManager:
             video_path = [rollings.non_tensor_batch['video_path'][i] for i, done in enumerate(dones) if not done]
             height = [rollings.non_tensor_batch['height'][i] for i, done in enumerate(dones) if not done]
             width = [rollings.non_tensor_batch['width'][i] for i, done in enumerate(dones) if not done]
-            selections = [selections[i] for i, done in enumerate(dones) if not done]
 
             sampled_frames_batch = self.sample_frames(video_path, next_obs, height, width)
             # Update the rollings state for the remaining active samples.
@@ -222,9 +221,9 @@ class LLMGenerationManager:
         for k, v in rollings.non_tensor_batch.items():
             new_batch[k] = [v[i] for i, done in enumerate(dones) if not done]
 
-            
-        rollings.non_tensor_batch["previous_times"] = rollings.non_tensor_batch["times"] 
 
+        rollings.non_tensor_batch["previous_times"].append(rollings.non_tensor_batch["times"])
+        
         # --- 1. Update non-tensor fields: times and round.
         rollings.non_tensor_batch["times"] = new_times
 
@@ -232,6 +231,7 @@ class LLMGenerationManager:
         for i in range(batch_size):
             sample_question = rollings.non_tensor_batch['question'][i]
             sample_times = new_times[i]
+            rollings.non_tensor_batch["previous_times"][i].append(sample_times)  # Append new times to previous times
             sample_prev_times= rollings.non_tensor_batch["previous_times"][i]  # per-sample history
             prompt = generate_prompt(
                 question=sample_question,
@@ -286,30 +286,29 @@ class LLMGenerationManager:
             # else:
             #     raw_prompt_final = prompt_with_chat_template
 
-            input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(
-                prompt=prompt_with_chat_template,
-                tokenizer=self.tokenizer,
-                max_length=self.max_prompt_length,
-                pad_token_id=self.tokenizer.pad_token_id,
-                left_pad=True,
-                truncation=self.truncation
-            )
-            if True:
-                from verl.models.transformers.qwen2_vl import get_rope_index
-                pos_ids = get_rope_index(
-                    self.processor,
-                    input_ids=input_ids[0],
-                    image_grid_thw=image_grid_thw,
-                    attention_mask=attention_mask[0]
+                input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(
+                    prompt=prompt_with_chat_template,
+                    tokenizer=self.tokenizer,
+                    max_length=self.max_prompt_length,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                    left_pad=True,
+                    truncation=self.truncation
                 )
-            # else:
-            #     pos_ids = compute_position_id_with_mask(attention_mask)
-            max_length = self.max_prompt_length
+                if True:
+                    from verl.models.transformers.qwen2_vl import get_rope_index
+                    pos_ids = get_rope_index(
+                        self.processor,
+                        input_ids=input_ids[0],
+                        image_grid_thw=image_grid_thw,
+                        attention_mask=attention_mask[0]
+                    )
+                # else:
+                #     pos_ids = compute_position_id_with_mask(attention_mask)
 
-            # Update each sample with padding to preserve shape.
-            rollings.batch["input_ids"][i] = self.pad_to_length(input_ids[0], max_length, self.tokenizer.pad_token_id)
-            rollings.batch["attention_mask"][i] = self.tensor_fn.create_attention_mask(rollings.batch["input_ids"][i], max_length)
-            rollings.batch["position_ids"][i] = self.tensor_fn.create_position_ids(rollings.batch["attention_mask"][i])
+                # Update each sample with padding to preserve shape.
+            rollings.batch["input_ids"][i] = input_ids[0]
+            rollings.batch["attention_mask"][i] = attention_mask[0]
+            rollings.batch["position_ids"][i] = pos_ids[0]
             rollings.non_tensor_batch["raw_prompt_ids"][i] = self.tokenizer.encode(raw_prompt_final, add_special_tokens=False)
 
         return rollings
