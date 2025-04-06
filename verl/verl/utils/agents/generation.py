@@ -107,7 +107,6 @@ class LLMGenerationManager:
 
             meta_info = gen_output.meta_info
             responses_ids, responses_str = self._postprocess_responses(gen_output.batch['responses'])
-
             # If this is the final round, record responses for all active samples.
             if step == self.max_rounds:
                 # mappings
@@ -123,7 +122,8 @@ class LLMGenerationManager:
 
             # Execute predictions to get next observations and done flags.
             next_obs, dones = self.execute_predictions(responses_str, current_times)
-
+            print(f'step {step}/{self.max_rounds}: Generated responses for {len(responses_ids)} active samples.')
+            print(f"There are {sum(dones)} done samples out of {len(dones)} total samples in this round.")
             # Record responses for samples that are done.
             for i, idx in enumerate(rollings.non_tensor_batch['batch_indices']):
                 if dones[i]:
@@ -148,7 +148,6 @@ class LLMGenerationManager:
                 new_times=next_obs,
                 new_round=step + 1
             )
-            dones = [done for done in dones if not done]  # Keep only the not-done flags
 
 
         final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
