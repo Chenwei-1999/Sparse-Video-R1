@@ -567,7 +567,7 @@ class RayPPOTrainer(object):
                 test_gen_batch = deepcopy(test_batch)
             elif 'multi_modal_inputs' in test_batch.non_tensor_batch.keys():
                 test_gen_batch = test_batch.pop(
-                    batch_keys=['test_batch', 'attention_mask', 'position_ids'],
+                    batch_keys=['input_ids', 'attention_mask', 'position_ids'],
                     non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
                 )
             else:
