@@ -51,6 +51,7 @@ class TensorHelper:
         """
         Pad responses for non-active examples with pad tokens.
         """
+
         assert active_mask.sum() == responses.shape[0]
         # Create masked responses tensor
         batch_size = active_mask.shape[0]
