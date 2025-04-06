@@ -2,7 +2,7 @@ import textwrap
 
 import textwrap
 
-def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5, previous_frames=None, previous_rounds=None):
+def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5, previous_frames=[]):
     """
     Generate a prompt string based on the provided video frames, question, and round details.
 
@@ -25,7 +25,7 @@ def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5,
         For round 1, just show the selected frames.
         For subsequent rounds, show the actions taken and the resulting selected frames.
         """
-        if not previous_frames:
+        if len(previous_frames) == 0:
             return ""
         
         lines = ["This is the history of previous rounds:"]
@@ -33,14 +33,15 @@ def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5,
         lines.append(f"Round 1: the frames selected are: [{', '.join(map(str, previous_frames[0]))}]")
         
         # For rounds 2 and onward, show the action and resulting frames.
-        if previous_rounds:
+        if len(previous_frames) >= 2:
             # It is assumed that len(previous_frames) == len(previous_rounds) + 1.
             for i in range(1, len(previous_frames)):
-                add_frames, remove_frames = previous_rounds[i - 1]
-                add_str = f"add [{', '.join(map(str, add_frames))}]" if add_frames else ""
-                remove_str = f"remove [{', '.join(map(str, remove_frames))}]" if remove_frames else ""
-                action_str = f"you {add_str} {remove_str}".strip()
-                lines.append(f"Round {i + 1}: {action_str}, so the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
+                # add_frames, remove_frames = previous_rounds[i - 1]
+                # add_str = f"add [{', '.join(map(str, add_frames))}]" if add_frames else ""
+                # remove_str = f"remove [{', '.join(map(str, remove_frames))}]" if remove_frames else ""
+                # action_str = f"you {add_str} {remove_str}".strip()
+                # lines.append(f"Round {i + 1}: {action_str}, so the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
+                lines.append(f"Round {i}: the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
         return "\n".join(lines)
 
     previous_history_str = format_previous_history(previous_frames, previous_rounds)
