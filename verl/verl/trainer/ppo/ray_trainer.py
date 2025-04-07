@@ -859,7 +859,7 @@ class RayPPOTrainer(object):
                 if  "video" in batch.non_tensor_batch['data_source']:
                     gen_batch = deepcopy(batch)
                     batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                               non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'])
+                               non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs', 'extra_info'])
                 elif 'multi_modal_inputs' in batch.non_tensor_batch.keys():
                     gen_batch = batch.pop(
                         batch_keys=['input_ids', 'attention_mask', 'position_ids'],
