@@ -59,7 +59,8 @@ def sample_video_frames(video_path, height=None, width=None, num_frames=5, strat
             break
 
     total_1fps_frames = len(candidates)
-
+    if strategy == 'all':
+        strategy = random.choice(['random', 'uniform'])
     # Select a subset of the candidates based on the strategy.
     if strategy == 'random':
         if num_frames < total_1fps_frames:
@@ -72,8 +73,6 @@ def sample_video_frames(video_path, height=None, width=None, num_frames=5, strat
         else:
             step = total_1fps_frames / float(num_frames)
             sampled_candidates = [candidates[min(int(i * step), total_1fps_frames - 1)] for i in range(num_frames)]
-    elif strategy == 'all':
-        sampled_candidates = candidates
     else:
         raise ValueError("Invalid sampling strategy. Choose 'random', 'uniform', or 'all'.")
     

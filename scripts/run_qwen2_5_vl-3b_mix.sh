@@ -6,7 +6,7 @@ export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
 export DATA_DIR=/scratch/cxk2993/VLM-R1
 export ROLLOUT_TP_SIZE=2
 export EXPERIMENT_NAME=qwen2.5-3b
-export SAMPLING_STRATEGY=random
+export SAMPLING_STRATEGY=all
 # export VLLM_ATTENTION_BACKEND=XFORMERS
 
 python3 -m verl.trainer.main_ppo \
