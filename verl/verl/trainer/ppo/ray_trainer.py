@@ -311,6 +311,8 @@ class RayPPOTrainer(object):
         self._validate_config()
         self._create_dataloader()
         self._init_logger()
+        sampling_strategy = self.config.data.get('sampling_strategy', 'random')
+        self.logger.log({'sampling_strategy': sampling_strategy}, step=0)
 
     def _init_logger(self):
         from verl.utils.tracking import Tracking
@@ -879,7 +881,7 @@ class RayPPOTrainer(object):
                     # generate a batch
                     with _timer('gen', timing_raw):
                         # gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
-                        gen_batch_output = generation_manager.run_llm_loop(gen_batch)
+                        gen_batch_output = generation_manager.run_llm_loop(gen_batch, global_steps=self.global_steps)
      
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer('gen_max', timing_raw):

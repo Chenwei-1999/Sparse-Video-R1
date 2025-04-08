@@ -77,7 +77,7 @@ class LLMGenerationManager:
         self.max_prompt_length = config.max_prompt_length
         self.truncation = 'error'
         
-    def run_llm_loop(self, gen_batch) -> Tuple[Dict, Dict]:
+    def run_llm_loop(self, gen_batch, global_steps=None) -> Tuple[Dict, Dict]:
         # Make a deep copy of the input batch and save the original inputs.
         rollings = deepcopy(gen_batch)
         # Filter tensors in rollings using global_indices
@@ -171,6 +171,7 @@ class LLMGenerationManager:
             )
 
         final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
+
         return self._compose_final_output(original_inputs, final_response_ids_tensor, meta_info)
 
         
