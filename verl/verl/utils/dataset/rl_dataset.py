@@ -197,8 +197,9 @@ class RLHFDataset(Dataset):
             # sample video frames
             video_path = row_dict[self.mm_key]
 
-            sampled_frames, sampled_times = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy='random')
-            
+            sampled_frames, sampled_times, total_frames = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy=self.sampling_strategy)
+            row_dict["extra_info"] = row_dict.get("extra_info", {})
+            row_dict["extra_info"]["total_frames"] = total_frames
             row_dict["frames"] = sampled_frames
             row_dict["times"] = sampled_times
             row_dict["round"] = 1
@@ -206,6 +207,7 @@ class RLHFDataset(Dataset):
             row_dict[self.mm_key] = [frame for frame in sampled_frames]
             prompt = generate_prompt(question=chat, 
                                      timestamps=sampled_times, 
+                                     total_frames=total_frames,
                                      max_rounds=self.max_rounds, 
                                      max_frames=self.max_frames)
             chat = [
@@ -272,9 +274,10 @@ class RLHFDataset(Dataset):
             row_dict['raw_prompt'] = chat.tolist()
 
         # add index for each prompt
-        index = row_dict.get("extra_info", {}).get("index", 0)
-        row_dict["index"] = index
 
+        index = row_dict["extra_info"].get("index", None)
+        row_dict["index"] = index
+        
         return row_dict
 
     def __getstate__(self):

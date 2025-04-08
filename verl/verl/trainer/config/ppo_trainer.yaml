@@ -5,7 +5,7 @@ data:
   prompt_key: problem
   max_frames: 5
   max_rounds: 5
-  sampling_strategy: random
+  sampling_strategy: uniform
   max_prompt_length: 512
   max_response_length: 512
   max_start_length: 256

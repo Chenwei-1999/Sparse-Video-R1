@@ -2,7 +2,7 @@ import textwrap
 
 import textwrap
 
-def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5, previous_frames=[]):
+def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_rounds=5, max_frames=5, previous_frames=[]):
     """
     Generate a prompt string based on the provided video frames, question, and round details.
 
@@ -42,11 +42,11 @@ def generate_prompt(question, timestamps, n_round=1, max_rounds=5, max_frames=5,
                 # lines.append(f"Round {i + 1}: {action_str}, so the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
                 lines.append(f"Round {i}: the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
         return "\n".join(lines)
-
+    video_info = f"sampled from total {total_frames} frames (decoded at 1 fps)" if total_frames else "frames (decoded at 1 fps)"
     previous_history_str = format_previous_history(previous_frames)
 
     prompt = textwrap.dedent(f"""
-        You have a video with {len(timestamps)} frames (decoded at 1 fps).
+        You have a video with {len(timestamps)} {video_info}.
         The sampled frame timestamps (in seconds) are: {timestamps}
         Please answer the following question:
 
