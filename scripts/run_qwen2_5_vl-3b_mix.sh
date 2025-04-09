@@ -17,7 +17,7 @@ python3 -m verl.trainer.main_ppo \
     data.max_prompt_length=8192 \
     data.val_batch_size=16 \
     data.max_response_length=256 \
-    data.sampling_strategy=random \
+    data.sampling_strategy=$SAMPLING_STRATEGY \
     actor_rollout_ref.model.path=$BASE_MODEL \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
