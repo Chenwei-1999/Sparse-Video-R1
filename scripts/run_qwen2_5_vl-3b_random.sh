@@ -4,7 +4,7 @@ export HF_HOME=/scratch/cxk2993/hf_cache
 export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
 export DATA_DIR=/scratch/cxk2993/VLM-R1
-export ROLLOUT_TP_SIZE=2
+export ROLLOUT_TP_SIZE=4
 export EXPERIMENT_NAME=qwen2.5-3b
 export SAMPLING_STRATEGY=random
 # export VLLM_ATTENTION_BACKEND=XFORMERS
@@ -14,7 +14,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_files=$DATA_DIR/train/nextqa.json \
     data.val_files=$DATA_DIR/val/nextqa.json \
     data.train_batch_size=8 \
-    data.max_prompt_length=8192 \
+    data.max_prompt_length=4096 \
     data.val_batch_size=16 \
     data.max_response_length=256 \
     data.sampling_strategy=random \
@@ -32,7 +32,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
