@@ -312,7 +312,6 @@ class RayPPOTrainer(object):
         self._create_dataloader()
         self._init_logger()
         sampling_strategy = self.config.data.get('sampling_strategy', 'random')
-        self.logger.log({'sampling_strategy': sampling_strategy}, step=0)
 
     def _init_logger(self):
         from verl.utils.tracking import Tracking
