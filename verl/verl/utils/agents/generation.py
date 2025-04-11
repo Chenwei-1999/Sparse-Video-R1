@@ -97,16 +97,16 @@ class LLMGenerationManager:
         rollings.non_tensor_batch["previous_times"] = [[gen_batch.non_tensor_batch['times'][i]] for i in range(batch_size)]
         # dones is local for the current step, initialized to False
         dones = [False] * batch_size 
-        # extra_info (dict, optional): Dictionary containing additional info like:
-        #             'timestamps' (list): Current frame timestamps. Required for modification checks.
-        #             'max_frames' (int): Maximum allowed frames. Required for modification checks.
-        #             'current_turn' (int): The current turn number. Required for max_turns check.
-        #             'max_turns' (int): The maximum number of turns allowed. Required for max_turns check.
-        #             'iter_decay' (float): Decay factor for iterations (optional).
-        #             'n_frames' (int): Number of frames used (optional, for penalty, distinct from len(timestamps)).
-        #             'frame_decay' (float): Decay factor for frames used (optional).
-        #             'type' (str): Type of the data source, val for validation data.
-                # Initialize global_indices to map active samples back to the original batch.
+          # extra_info (dict, optional): Dictionary containing additional info like:
+          #             'timestamps' (list): Current frame timestamps. Required for modification checks.
+          #             'max_frames' (int): Maximum allowed frames. Required for modification checks.
+          #             'current_turn' (int): The current turn number. Required for max_turns check.
+          #             'max_turns' (int): The maximum number of turns allowed. Required for max_turns check.
+          #             'iter_decay' (float): Decay factor for iterations (optional).
+          #             'n_frames' (int): Number of frames used (optional, for penalty, distinct from len(timestamps)).
+          #             'frame_decay' (float): Decay factor for frames used (optional).
+          #             'type' (str): Type of the data source, val for validation data.
+                  # Initialize global_indices to map active samples back to the original batch.
         meta_info = {}
         
         for step in range(1, self.max_rounds+1):
