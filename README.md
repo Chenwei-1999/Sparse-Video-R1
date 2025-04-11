@@ -1,4 +1,4 @@
-<h1 style="text-align: center;">VideoR1/h1>
+<h1 style="text-align: center;">VideoR1</h1>
 
 ### Installation
 We follow this [guideline](https://github.com/volcengine/verl/blob/main/docs/README_vllm0.8.md) in setting up our enviorments. 
@@ -8,7 +8,6 @@ conda create -n verl python==3.10
 conda activate verl
 
 # Install verl
-git clone https://github.com/volcengine/verl.git
 cd verl
 pip3 install -e .
 
