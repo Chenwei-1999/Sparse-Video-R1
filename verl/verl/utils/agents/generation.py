@@ -60,6 +60,7 @@ class LLMGenerationManager:
         config: GenerationConfig,
         logger: Tracking,
         is_validation: bool = False,
+        ratio: float = 1.0
     ):
         self.tokenizer = tokenizer
         self.processor = processor
@@ -70,6 +71,7 @@ class LLMGenerationManager:
         self.max_frames = config.max_frames
         self.no_think_rl = config.no_think_rl
         self.num_gpus = config.num_gpus
+        self.ratio = ratio
         self.tensor_fn = TensorHelper(TensorConfig(
             pad_token_id=tokenizer.pad_token_id,
             max_prompt_length=config.max_prompt_length,
@@ -130,7 +132,7 @@ class LLMGenerationManager:
                         extra_info['max_turns'] = self.max_rounds
                         original_inputs['extra_info'][i].update(extra_info)
                 break
-
+            
             # Get current times for active samples; if missing, default to empty lists.
             current_times = rollings.non_tensor_batch['times']
 
@@ -154,7 +156,6 @@ class LLMGenerationManager:
                 # All samples are done, break the loop.
                 break
             # only keep things not done
-
             video_path = [rollings.non_tensor_batch['video_path'][i] for i, done in enumerate(dones) if not done]
             height = [rollings.non_tensor_batch['height'][i] for i, done in enumerate(dones) if not done]
             width = [rollings.non_tensor_batch['width'][i] for i, done in enumerate(dones) if not done]
@@ -379,7 +380,8 @@ class LLMGenerationManager:
                 video_paths[idx],
                 obs,
                 heights[idx],
-                widths[idx]
+                widths[idx], 
+                ratio=self.ratio
             )
             sampled_frames_batch.append(sampled_frames)
 

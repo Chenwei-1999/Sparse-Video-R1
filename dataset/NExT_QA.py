@@ -63,8 +63,8 @@ def create_data(QA_data, vid_to_vidor, parent_directory, mode='train', sample_si
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="train")
-    parser.add_argument("--output_dir", type=str, default="/scratch/cxk2993/VLM-R1")
-    parser.add_argument("--parent_directory", type=str, default='/scratch/cxk2993/NExT-QA')
+    parser.add_argument("--output_dir", type=str, default="/shares/hlw3876/chenwei/VLM-R1")
+    parser.add_argument("--parent_directory", type=str, default='/shares/hlw3876/chenwei/NExT-QA')
     parser.add_argument("--n", type=int, default=None)
   
     args = parser.parse_args()

@@ -92,6 +92,7 @@ class RLHFDataset(Dataset):
                  cache_dir='~/.cache/verl/rlhf',
                  chat_template_func=None,
                  max_frames=5,
+                 resolution=1.0,
                  max_rounds=5,
                  sampling_strategy=None,
                  return_raw_chat=False,
@@ -110,6 +111,8 @@ class RLHFDataset(Dataset):
         self.mm_key = mm_key
         self.max_prompt_length = max_prompt_length
         self.filter_prompts = filter_prompts
+
+        self.resolution = resolution
 
         self.return_raw_chat = return_raw_chat
         self.chat_template_func = chat_template_func
@@ -197,7 +200,7 @@ class RLHFDataset(Dataset):
             # sample video frames
             video_path = row_dict[self.mm_key]
 
-            sampled_frames, sampled_times, total_frames = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy=self.sampling_strategy)
+            sampled_frames, sampled_times, total_frames = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy=self.sampling_strategy, ratio=self.resolution)
             row_dict["extra_info"] = row_dict.get("extra_info", {})
             row_dict["extra_info"]["total_frames"] = total_frames
             row_dict["frames"] = sampled_frames
