@@ -9,6 +9,7 @@ export EXPERIMENT_NAME=qwen2.5-3b
 export SAMPLING_STRATEGY=random
 export RESOLUTION=0.5
 export MAX_FRAMES=8
+export REWARD_PATH=/home/cxk2993/VideoR1/verl/verl/utils/agents/reward_function.py
 # export VLLM_ATTENTION_BACKEND=XFORMERS
 
 python3 -m verl.trainer.main_ppo \
@@ -44,6 +45,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.kl_ctrl.kl_coef=0.001 \
+    custom_reward_function.path=$REWARD_PATH \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_test' \
