@@ -426,6 +426,7 @@ class RayPPOTrainer(object):
                                          prompt_key=self.config.data.prompt_key,
                                          mm_key=self.config.data.get('mm_key', 'images'),
                                          max_prompt_length=self.config.data.max_prompt_length,
+                                         resolution=self.config.data.resolution,
                                          filter_prompts=True,
                                          return_raw_chat=self.config.data.get('return_raw_chat', False),
                                          max_frames=self.config.data.get('max_frames', 5), # for video only
@@ -546,6 +547,7 @@ class RayPPOTrainer(object):
             actor_rollout_wg=self.actor_rollout_wg,
             config=gen_config,
             logger = self.logger,
+            ratio=self.config.data.get('ratio', 1.0),
         )
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
@@ -831,6 +833,7 @@ class RayPPOTrainer(object):
             actor_rollout_wg=self.actor_rollout_wg,
             config=gen_config,
             logger = self.logger,
+            ratio=self.config.data.get('ratio', 1.0),
         )
         # load checkpoint before doing anything
         self._load_checkpoint()

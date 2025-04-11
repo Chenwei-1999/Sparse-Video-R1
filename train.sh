@@ -13,3 +13,5 @@ bash ./scripts/run_qwen2_5_vl-3b_mix.sh
 # run importance
 # bash ./scripts/run_qwen2_5_vl-3b_importance.sh
 
+bash ./scripts/run_qwen2_5_vl-3b_random_resolution.sh
+
