@@ -30,6 +30,7 @@ import verl.utils.torch_functional as verl_F
 from verl.utils.agents.frames_sampler import sample_video_frames
 from verl.utils.agents.construct_prompt import generate_prompt
 
+import random
 import json
 
 def collate_fn(data_list: list[dict]) -> dict:
@@ -118,7 +119,6 @@ class RLHFDataset(Dataset):
         self.chat_template_func = chat_template_func
         self.truncation = truncation
         self.filter_overlong_prompts = filter_overlong_prompts
-        print(f'sampling strategy: {sampling_strategy}, max frames: {max_frames}, max rounds: {max_rounds}')
         self.max_frames = max_frames
         self.max_rounds = max_rounds
         self.sampling_strategy = sampling_strategy
@@ -190,7 +190,7 @@ class RLHFDataset(Dataset):
         row_dict['question'] = chat
       
         is_multi_modal = self.mm_key in row_dict
-        num_frames = self.max_frames
+        num_frames = random.randint(1, self.max_frames) 
 
         # This project settings is, question is the raw question from each datasets, and video is the video path
         # We need sample frames from video, construct real prompt with sampled frames and questions

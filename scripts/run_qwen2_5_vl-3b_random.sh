@@ -1,7 +1,7 @@
 set -x
 
 export HF_HOME=/scratch/cxk2993/hf_cache
-export N_GPUS=4
+export N_GPUS=4 # required
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
 export DATA_DIR=/scratch/cxk2993/VLM-R1
 export ROLLOUT_TP_SIZE=4
@@ -10,13 +10,13 @@ export SAMPLING_STRATEGY=random
 # export VLLM_ATTENTION_BACKEND=XFORMERS
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=grpo \
+    algorithm.adv_estimator=ppo \
     data.train_files=$DATA_DIR/train/nextqa.json \
     data.val_files=$DATA_DIR/val/nextqa.json \
     data.train_batch_size=8 \
-    data.max_prompt_length=4096 \
+    data.max_prompt_length=8192 \
     data.val_batch_size=16 \
-    data.max_response_length=256 \
+    data.max_response_length=512 \
     data.sampling_strategy=$SAMPLING_STRATEGY \
     actor_rollout_ref.model.path=$BASE_MODEL \
     actor_rollout_ref.actor.optim.lr=1e-6 \
@@ -42,7 +42,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.kl_ctrl.kl_coef=0.001 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_test' \
+    trainer.project_name='verl_test_ppo' \
     trainer.experiment_name=$SAMPLING_STRATEGY \
     trainer.n_gpus_per_node=$N_GPUS \
     trainer.nnodes=1 \

@@ -17,7 +17,7 @@ import random
 from PIL import Image
 from io import BytesIO
 
-def sample_video_frames(video_path, height=None, width=None, num_frames=5, strategy='uniform', ratio=1.0):
+def sample_video_frames(video_path, height=None, width=None, num_frames=5, strategy='uniform', ratio=0.8):
     """
     Args:
         video_path (str): Path to the video file.

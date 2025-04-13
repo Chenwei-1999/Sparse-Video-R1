@@ -1,26 +1,22 @@
 set -x
-export HF_HOME=PATH_TO_MODEL_CACHE # commont if you are don't want to change
+
+export HF_HOME=/scratch/cxk2993/hf_cache
 export N_GPUS=4 # required
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
-export DATA_DIR=PATH_TO_DATA_STORAGE
+export DATA_DIR=/scratch/cxk2993/VLM-R1
 export ROLLOUT_TP_SIZE=4
 export EXPERIMENT_NAME=qwen2.5-3b
 export SAMPLING_STRATEGY=random
-export RESOLUTION=0.6
-export MAX_FRAMES=8
-export REWARD_PATH=/home/cxk2993/VideoR1/verl/verl/utils/agents/reward_function.py
 # export VLLM_ATTENTION_BACKEND=XFORMERS
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=grpo \
+    algorithm.adv_estimator=gae \
     data.train_files=$DATA_DIR/train/nextqa.json \
     data.val_files=$DATA_DIR/val/nextqa.json \
     data.train_batch_size=8 \
     data.max_prompt_length=8192 \
     data.val_batch_size=16 \
     data.max_response_length=512 \
-    data.resolution=$RESOLUTION \
-    data.max_frames=$MAX_FRAMES \
     data.sampling_strategy=$SAMPLING_STRATEGY \
     actor_rollout_ref.model.path=$BASE_MODEL \
     actor_rollout_ref.actor.optim.lr=1e-6 \
@@ -44,10 +40,10 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.kl_ctrl.kl_coef=0.001 \
-    custom_reward_function.path=$REWARD_PATH \
+    critic.micro_batch_size_per_gpu=1 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_test' \
+    trainer.project_name='verl_test_ppo' \
     trainer.experiment_name=$SAMPLING_STRATEGY \
     trainer.n_gpus_per_node=$N_GPUS \
     trainer.nnodes=1 \

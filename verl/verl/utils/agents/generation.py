@@ -130,7 +130,7 @@ class LLMGenerationManager:
                         extra_info['max_frames'] = self.max_frames
                         extra_info['current_turn'] = step
                         extra_info['max_turns'] = self.max_rounds
-                        original_inputs['extra_info'][i].update(extra_info)
+                        original_inputs['extra_info'][idx].update(extra_info)
                 break
             
             # Get current times for active samples; if missing, default to empty lists.
@@ -138,8 +138,6 @@ class LLMGenerationManager:
 
             # Execute predictions to get next observations and done flags.
             next_obs, dones = self.execute_predictions(responses_str, current_times)
-            print(f'step {step}/{self.max_rounds}: Generated responses for {len(responses_ids)} active samples.')
-            print(f"There are {sum(dones)} done samples out of {len(dones)} total samples in this round.")
             # Record responses for samples that are done.
             for i, idx in enumerate(rollings.non_tensor_batch['batch_indices']):
                 if dones[i]:
@@ -149,7 +147,7 @@ class LLMGenerationManager:
                     extra_info['max_frames'] = self.max_frames
                     extra_info['current_turn'] = step
                     extra_info['max_turns'] = self.max_rounds
-                    original_inputs['extra_info'][i].update(extra_info)
+                    original_inputs['extra_info'][idx].update(extra_info)
                     # extra_info['n_frames'] = len(rollings.non_tensor_batch['previous_times'][i][-1])
             # Filter out done samples: update global_indices.
             if sum(dones) == len(dones):

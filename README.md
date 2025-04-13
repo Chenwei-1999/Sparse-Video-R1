@@ -1,12 +1,12 @@
-<h1 style="text-align: center;">FramesR1: Avdance Video Understanding with Adaptive Frames Sampling</h1>
+<h1 style="text-align: center;">Sparse-Video-R1: Avdance Video Understanding with Adaptive Frames Sampling</h1>
 
-## 1. What is FramesR1?
-FramesR1 is a lightweight extension for **Vision‑Language Models (VLMs)** that teaches them to reason about *which* video frames they actually need.  
+## 1. What is Sparse-Video-R1?
+Sparse-Video-R1 is a lightweight extension for **Vision‑Language Models (VLMs)** that teaches them to reason about *which* video frames they actually need.  
 Inspired by R1‑style fine‑tuning for LLMs, we introduce a **multi‑round dialogue loop**:
 
 1. **Round *t*** – The VLM receives a small set of frames plus the question.  
 2. The model *thinks* (“Is this enough to answer?”).  
-3. If not, it *asks* for more evidence by selecting new timestamps.  
+3. If not, it *asks* for more evidence by selecting new timestamps (frames).  
 4. We sample those frames and repeat until the answer is confidently produced or the turn limit is reached.
 
 This self‑curated framing leads to sharper grounding, lower latency, and better accuracy on video QA benchmarks.
