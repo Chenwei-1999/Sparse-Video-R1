@@ -19,6 +19,7 @@ from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import List, Union, Dict, Any
+import wandb
 
 
 class Tracking(object):
@@ -106,6 +107,34 @@ class Tracking(object):
             self.logger['vemlp_wandb'].finish(exit_code=0)
         if 'tensorboard' in self.logger:
             self.logger['tensorboard'].finish()
+    
+    def log_scalar(self, name: str, value: float, step: int):
+        self.log({name: value}, step)
+
+    def log_histogram(self, name: str, values: list, step: int):
+        import wandb
+        self.log({name: wandb.Histogram(values)}, step)
+
+    def log_rounds_per_sample(self, rounds: List[int], prefix: str, step: int):
+        """
+        Log each sample's dialogue round count as a line chart and a table to wandb.
+        """
+        data = [[i, r] for i, r in enumerate(rounds)]
+        table = wandb.Table(data=data, columns=["sample_index", "dialogue_rounds"])
+
+        line_chart = wandb.plot.line(
+            table,
+            x="sample_index",
+            y="dialogue_rounds",
+            title=f"{prefix.upper()} Dialogue Rounds per Sample"
+        )
+
+        self.log({
+            f"{prefix}/rounds_per_sample_table": table,
+            f"{prefix}/dialogue_rounds_line": line_chart
+        }, step=step)
+
+        print(f"[Tracking] Logged {len(rounds)} sample round counts to wandb (prefix: {prefix}, step: {step})")
 
 
 class _TensorboardAdapter:
