@@ -72,7 +72,6 @@ def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_roun
         - <answer>chair</answer> (if the current frames are sufficient and the answer is "chair")
         - <answer>+[3,4,10]-[2,5]</answer> (to add frames 3, 4, and 10 and remove frames 2 and 5)
 
-        <think>
     """).strip()
 
     return prompt

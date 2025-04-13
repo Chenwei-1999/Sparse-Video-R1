@@ -3,7 +3,7 @@ python dataset/NExT_QA.py --mode train --n 1000
 python dataset/NExT_QA.py --mode val --n 1000 
 
 # run random
-bash ./scripts/run_qwen2_5_vl-3b_random.sh 
+bash ./scripts/run_qwen2_5_vl-3b_random.sh
 
 # run uniform
 bash ./scripts/run_qwen2_5_vl-3b_uniform.sh 
@@ -14,4 +14,4 @@ bash ./scripts/run_qwen2_5_vl-3b_mix.sh
 # bash ./scripts/run_qwen2_5_vl-3b_importance.sh
 bash ./scripts/run_qwen2_5_vl-3b_random_resolution.sh
 
-bash ./scripts/run_qwen2_5_vl-7b_random.sh 
+bash ./scripts/run_qwen2_5_vl-3b_random_ppo.sh

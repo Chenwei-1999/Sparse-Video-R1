@@ -1,14 +1,12 @@
 set -x
-export HF_HOME=PATH_TO_MODEL_CACHE # commont if you are don't want to change
-export N_GPUS=4 # required
+
+export HF_HOME=PATH_TO_HUGGINGFACE_CACHE
+export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
 export DATA_DIR=PATH_TO_DATA_STORAGE
 export ROLLOUT_TP_SIZE=4
 export EXPERIMENT_NAME=qwen2.5-3b
-export SAMPLING_STRATEGY=random
-export RESOLUTION=0.6
-export MAX_FRAMES=8
-export REWARD_PATH=/home/cxk2993/VideoR1/verl/verl/utils/agents/reward_function.py
+export SAMPLING_STRATEGY=all #choose from "all", "random", "uniform"
 # export VLLM_ATTENTION_BACKEND=XFORMERS
 
 python3 -m verl.trainer.main_ppo \
@@ -18,9 +16,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_batch_size=8 \
     data.max_prompt_length=8192 \
     data.val_batch_size=16 \
-    data.max_response_length=512 \
-    data.resolution=$RESOLUTION \
-    data.max_frames=$MAX_FRAMES \
+    data.max_response_length=256 \
     data.sampling_strategy=$SAMPLING_STRATEGY \
     actor_rollout_ref.model.path=$BASE_MODEL \
     actor_rollout_ref.actor.optim.lr=1e-6 \
@@ -36,7 +32,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
@@ -44,7 +40,6 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.kl_ctrl.kl_coef=0.001 \
-    custom_reward_function.path=$REWARD_PATH \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_test' \
