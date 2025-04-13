@@ -16,7 +16,7 @@ This self‑curated framing leads to sharper grounding, lower latency, and bette
 ## 2. Recent Changes
 | Date       | Change                                               |
 |------------|------------------------------------------------------|
-| 2025‑04‑11 | Initial public release – code, docs, and NExT‑QA demo scripts. |
+| 2025‑04‑13 | Initial public release – code, docs, and NExT‑QA demo scripts. |
 
 ---
 
@@ -26,6 +26,7 @@ This self‑curated framing leads to sharper grounding, lower latency, and bette
 > • CUDA 11.8+ (A100/H100 recommended)  
 > • Python 3.10  
 > • Conda (Miniconda or Anaconda)
+> • 4x80G GPU (for 3B/7B Qwen-2.5-vl model)
 
 ```bash
 # 1️⃣  Create a clean environment
@@ -62,7 +63,7 @@ pip install gdown
 Then download and unpack:
 ```bash
 # 4️⃣  Fetch everything
-cd /path/to/storage/data
+cd /path/to/row_data
 gdown --folder https://drive.google.com/drive/folders/1gKRR2es8-gRTyP25CvrrVtV6aN5UxttF
 
 # 5️⃣  Unzip
@@ -73,7 +74,17 @@ unzip test-data-nextqa.zip
 ```
 
 ## 5. Quick Start
+
+Before running the training script, update the following variables in the respective scripts:
+
+- **HF_HOME:** Directory for storing your model.
+- **DATA_DIR:** Directory for storing the data processed by `dataset/NExT_QA.py`.
+- **ROW_DATA:** Path to where you downloaded the NExT‑QA dataset.
+
+Make sure to update these variables in both:
+- `scripts/run_qwen2_5_vl_template.sh`
+- `train.sh`
+
+Then, launch the minimal training pipeline:
 ```bash
 sh train.sh
-```
-The script will start the minimal training pipeline based on GRPO.

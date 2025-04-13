@@ -1,17 +1,8 @@
 
-python dataset/NExT_QA.py --mode train --n 1000
-python dataset/NExT_QA.py --mode val --n 1000 
+export ROW_DATA=/path/to/row_data/NExT-QA
+export DATA_DIR=/path/to/pocessed_data
 
-# run random
-bash ./scripts/run_qwen2_5_vl-3b_random.sh
+python dataset/NExT_QA.py --mode train --n 1000 --output_dir $DATA_DIR --parent_directory $ROW_DATA
+python dataset/NExT_QA.py --mode val --n 1000 --output_dir $DATA_DIR --parent_directory $ROW_DATA
 
-# run uniform
-bash ./scripts/run_qwen2_5_vl-3b_uniform.sh 
-
-# run all
-bash ./scripts/run_qwen2_5_vl-3b_mix.sh 
-# run importance
-# bash ./scripts/run_qwen2_5_vl-3b_importance.sh
-bash ./scripts/run_qwen2_5_vl-3b_random_resolution.sh
-
-bash ./scripts/run_qwen2_5_vl-3b_random_ppo.sh
+bash ./scripts/run_qwen2_5_vl_template.sh
