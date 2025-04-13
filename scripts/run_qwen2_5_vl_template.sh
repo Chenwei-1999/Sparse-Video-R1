@@ -1,9 +1,9 @@
 set -x
 
-export HF_HOME=PATH_TO_HUGGINGFACE_CACHE
+export HF_HOME=/path/to/huggingface_cache
 export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
-export DATA_DIR=PATH_TO_DATA_STORAGE
+export DATA_DIR=/path/to/pocessed_data
 export ROLLOUT_TP_SIZE=4
 export EXPERIMENT_NAME=qwen2.5-3b
 export SAMPLING_STRATEGY=all #choose from "all", "random", "uniform"
@@ -42,7 +42,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.kl_ctrl.kl_coef=0.001 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_test' \
+    trainer.project_name='Sparse_Video_R1' \
     trainer.experiment_name=$SAMPLING_STRATEGY \
     trainer.n_gpus_per_node=$N_GPUS \
     trainer.nnodes=1 \
