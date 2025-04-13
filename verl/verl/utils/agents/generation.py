@@ -16,6 +16,7 @@ from tensordict import TensorDict
 from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
 
+
 def process_image(image, max_pixels: int = 2048 * 2048, min_pixels: int = 512 * 512):
     import math
     from io import BytesIO
@@ -84,6 +85,7 @@ class LLMGenerationManager:
         rollings = deepcopy(gen_batch)
         # Filter tensors in rollings using global_indices
         batch_size = rollings.batch['input_ids'].shape[0]
+        rounds_per_sample = [0] * batch_size
         final_response_ids_list = [None] * batch_size
         original_inputs = {
             'input_ids': gen_batch.batch['input_ids'],
@@ -130,7 +132,12 @@ class LLMGenerationManager:
                         extra_info['max_frames'] = self.max_frames
                         extra_info['current_turn'] = step
                         extra_info['max_turns'] = self.max_rounds
+<<<<<<< Updated upstream
                         original_inputs['extra_info'][idx].update(extra_info)
+=======
+                    
+                        original_inputs['extra_info'][i].update(extra_info)
+>>>>>>> Stashed changes
                 break
             
             # Get current times for active samples; if missing, default to empty lists.
@@ -138,6 +145,13 @@ class LLMGenerationManager:
 
             # Execute predictions to get next observations and done flags.
             next_obs, dones = self.execute_predictions(responses_str, current_times)
+<<<<<<< Updated upstream
+=======
+            for i, idx in enumerate(rollings.non_tensor_batch['batch_indices']):
+                rounds_per_sample[idx] += 1
+            print(f'step {step}/{self.max_rounds}: Generated responses for {len(responses_ids)} active samples.')
+            print(f"There are {sum(dones)} done samples out of {len(dones)} total samples in this round.")
+>>>>>>> Stashed changes
             # Record responses for samples that are done.
             for i, idx in enumerate(rollings.non_tensor_batch['batch_indices']):
                 if dones[i]:
@@ -170,6 +184,9 @@ class LLMGenerationManager:
             )
 
         final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
+        prefix = "val" if self.is_validation else "train"
+        meta_info['rounds_per_sample'] = rounds_per_sample
+        self.logger.log_rounds_per_sample(rounds_per_sample, prefix, global_steps)
 
         return self._compose_final_output(original_inputs, final_response_ids_tensor, meta_info)
 

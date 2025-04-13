@@ -321,10 +321,19 @@ class RayPPOTrainer(object):
             print("Converted config:", container)
         except Exception as e:
             print("Error during OmegaConf conversion:", e)
+        extra_info = {
+        "extra_info" : {
+                "n_agents":self.config.actor_rollout_ref.rollout.n_agent,
+                "base_model":self.config.actor_rollout_ref.model.path,
+                "sampling strategy":self.config.data.get('sampling_strategy', 'unknown'),
+                }
+        }
+        full_config = OmegaConf.to_container(self.config, resolve=True)
+        full_config.update(extra_info)
         self.logger = Tracking(project_name=self.config.trainer.project_name,
                           experiment_name=self.config.trainer.experiment_name,
                           default_backend=self.config.trainer.logger,
-                          config=OmegaConf.to_container(self.config, resolve=True))
+                          config=full_config)
     def _validate_config(self):
         config = self.config
         # number of GPUs total
