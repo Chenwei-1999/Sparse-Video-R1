@@ -25,7 +25,7 @@ from verl.utils.agents.frames_sampler import sample_video_frames
 # Configuration
 DATA_PATH = "/mnt/c/Users/Chenwei/Desktop/VideoAgent/data/val/nextqa.json"
 NUM_DATA = 100
-OUTPUT_PATH = "qwen_video_responses.json"
+OUTPUT_PATH = "qwen_multi_image_responses.json"
 NUM_FRAMES = 5
 MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
 MAX_TOKENS = 10000
