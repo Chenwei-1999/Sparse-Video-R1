@@ -39,6 +39,7 @@ var/
 scripts/
 !scripts/NextQA.sh
 !scripts/run_qwen2_5_vl_template.sh
+!scripts/data_download
 train.sh
 
 # PyInstaller
