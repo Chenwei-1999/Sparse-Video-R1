@@ -88,7 +88,7 @@ Before running the training script, update the following variables in the respec
 - **RAW_DATA:** Path to where you downloaded the NExT-QA dataset
 
 Make sure to update these variables in both:
-- `scripts/template/run_qwen2_5_vl_template.sh`
+- `scripts/run_qwen2_5_vl_template.sh`
 - `train.sh`
 
 Then, launch the minimal training pipeline:
@@ -135,29 +135,8 @@ For detailed baseline results and evaluation scripts, please refer to `scripts/t
 
 *Figure 3: Training curve showing the performance of Qwen-2.5-VL-3B with random frame sampling strategy.*
 
----
 
-## 7. Contributing
-
-We welcome contributions! Please feel free to:
-- Report bugs and issues
-- Suggest improvements
-- Submit pull requests
-
-## 8. Citation
-
-If you use Sparse-Video-R1 in your research, please cite our work:
-
-```bibtex
-@article{sparse-video-r1,
-  title={Sparse-Video-R1: Advanced Video Understanding with Adaptive Frame Sampling},
-  author={Your Name and Collaborators},
-  journal={arXiv preprint},
-  year={2025}
-}
-```
-
-## 9. License
+## 7. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
