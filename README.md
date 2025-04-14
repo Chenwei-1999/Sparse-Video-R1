@@ -136,7 +136,43 @@ For detailed baseline results and evaluation scripts, please refer to `scripts/t
 *Figure 3: Training curve showing the performance of Qwen-2.5-VL-3B with random frame sampling strategy.*
 
 
-## 7. License
+
+## 7. Acknowledgments
+
+This project builds upon several foundational works:
+
+- **VERL Framework**: We extend the `verl: Volcano Engine Reinforcement Learning for LLMs` framework. The original codebase can be found at [verl GitHub Repository](https://github.com/volcengine).
+
+- **RAGEN**: Our multi-round dialogue implementation is based on the R1-style conversation approach from [RAGEN](https://github.com/RAGEN-AI/RAGEN).
+
+### Key Modifications and Extensions
+
+Our implementation introduces several modifications to the base frameworks:
+
+1. **Multi-frame VLM Support**: 
+   - Modified the RL-dataset to support multi-frame inputs for vision-language models
+
+2. **Multi-round Dialogue Loop**:
+   - Implemented a vLLM-based generation loop for iterative frame requests
+   - Also based on RAGEN's conversation architecture
+
+3. **Reward Function**:
+   - Implemented a new reward function to handle different types of outputs
+
+These modifications have been made to better suit our specific use case of video question answering while maintaining compatibility with the core VERL framework.
+
+## 8. Citation
+
+```
+@misc{Sparse-Video-R1,
+author       = {Chenwei Xu and Zheng Ye and Zhuofan Xia and Shang Wu and Weijian Li and Pranav Maneriker and Lie Lu and Fan Du and Manling Li and Han Liu},
+title        = {Sparse-Video-R1: Advanced Video Understanding with Adaptive Frame Sampling},
+howpublished = {https://github.com/Chenwei-1999/Sparse-Video-R1},
+note         = {Accessed: 2025-04-14},
+year         = {2025}
+}
+```
+
+## 9. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
