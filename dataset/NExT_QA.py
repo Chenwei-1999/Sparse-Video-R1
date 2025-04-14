@@ -5,6 +5,19 @@ import json
 
 
 def create_data(QA_data, vid_to_vidor, parent_directory, mode='train', sample_size=None):
+    """
+    Create dataset entries from QA data and video information.
+    
+    Args:
+        QA_data (pd.DataFrame): DataFrame containing question-answer pairs and video information
+        vid_to_vidor (dict): Mapping from video IDs to video paths
+        parent_directory (str): Base directory containing video files
+        mode (str): Dataset mode ('train', 'val', or 'test')
+        sample_size (int, optional): Number of samples to create. If None, uses all data.
+        
+    Returns:
+        list: List of dataset entries with video, question, and answer information
+    """
     if sample_size is not None:
         QA_data = QA_data.sample(n=sample_size, random_state=42)
         print(f"Sampled {sample_size} entries from the dataset for {mode} mode.")
@@ -36,13 +49,13 @@ def create_data(QA_data, vid_to_vidor, parent_directory, mode='train', sample_si
             frame_count = qa_entry['frame_count'].values[0]
             width = qa_entry['width'].values[0]
             height = qa_entry['height'].values[0]
-            oringial_id = qa_entry['video'].values[0]    
+            original_id = qa_entry['video'].values[0]    
             # Build the final data sample.
             sample = {
                 "height": int(height),
                 "width": int(width),
                 "id": int(id),
-                "original_id": int(oringial_id),
+                "original_id": int(original_id),
                 "dataset_name": "NExT-QA",
                 "num_frames": int(frame_count),
                 "problem": str(q_prompt),

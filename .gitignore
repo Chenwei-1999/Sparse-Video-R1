@@ -35,6 +35,12 @@ var/
 .installed.cfg
 *.egg
 
+# scripts
+scripts/
+!scripts/NextQA.sh
+!scripts/run_qwen2_5_vl_template.sh
+train.sh
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
