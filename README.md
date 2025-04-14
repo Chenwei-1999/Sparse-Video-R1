@@ -1,5 +1,11 @@
 # Sparse-Video-R1: Advanced Video Understanding with Adaptive Frame Sampling
 
+
+![Conceptual Overview](public/sketch.png)
+
+*Figure 1: Conceptual illustration of Sparse-Video-R1's multi-round dialogue process, showing how the model iteratively requests and analyzes video frames to answer questions.*
+
+
 ## 1. What is Sparse-Video-R1?
 Sparse-Video-R1 is a lightweight extension for **Vision-Language Models (VLMs)** that teaches them to reason about *which* video frames they actually need.  
 Inspired by R1-style fine-tuning for LLMs, we introduce a **multi-round dialogue loop**:
@@ -10,6 +16,10 @@ Inspired by R1-style fine-tuning for LLMs, we introduce a **multi-round dialogue
 4. We sample those frames and repeat until the answer is confidently produced or the turn limit is reached.
 
 This self-curated framing leads to sharper grounding, lower latency, and better accuracy on video QA benchmarks.
+
+![Real-world Example](public/example.png)
+
+*Figure 2: A concrete example of Sparse-Video-R1 in action, demonstrating the model's ability to iteratively request and analyze specific video frames to answer a question.*
 
 ---
 
