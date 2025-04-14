@@ -48,6 +48,7 @@ scripts/*
 !scripts/test/Qwen/**
 !scripts/**/*.py
 !scripts/**/*.ipynb
+**/*.json
 train.sh
 
 # PyInstaller
@@ -98,8 +99,11 @@ scripts/*
 !scripts/test/
 !scripts/test/OpenAI/
 !scripts/test/OpenAI/**
+!scripts/test/Qwen/
+!scripts/test/Qwen/**
 !scripts/**/*.py
 !scripts/**/*.ipynb
+**/*.json
 
 # PyBuilder
 target/
