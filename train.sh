@@ -1,8 +1,12 @@
+#!/bin/bash
 
-export ROW_DATA=/path/to/row_data/NExT-QA
-export DATA_DIR=/path/to/pocessed_data
+# Set environment variables
+export RAW_DATA=/path/to/raw_data/NExT-QA
+export DATA_DIR=/path/to/processed_data
 
-python dataset/NExT_QA.py --mode train --n 1000 --output_dir $DATA_DIR --parent_directory $ROW_DATA
-python dataset/NExT_QA.py --mode val --n 1000 --output_dir $DATA_DIR --parent_directory $ROW_DATA
+# Process training and validation data
+python dataset/NExT_QA.py --mode train --n 1000 --output_dir $DATA_DIR --parent_directory $RAW_DATA
+python dataset/NExT_QA.py --mode val --n 1000 --output_dir $DATA_DIR --parent_directory $RAW_DATA
 
-bash ./scripts/run_qwen2_5_vl_random.sh
+# Run the training script
+bash ./scripts/run_qwen2_5_vl_template.sh
