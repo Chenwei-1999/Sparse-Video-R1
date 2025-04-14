@@ -44,11 +44,11 @@ scripts/*
 !scripts/test/
 !scripts/test/OpenAI/
 !scripts/test/OpenAI/**
+!scripts/test/OpenAI/*.py
 !scripts/test/Qwen/
 !scripts/test/Qwen/**
-!scripts/**/*.py
-!scripts/**/*.ipynb
-scripts/**/*.json
+!scripts/test/Qwen/*.py
+scripts/test/**/*.json
 train.sh
 
 # PyInstaller
@@ -99,11 +99,11 @@ scripts/*
 !scripts/test/
 !scripts/test/OpenAI/
 !scripts/test/OpenAI/**
+!scripts/test/OpenAI/*.py
 !scripts/test/Qwen/
 !scripts/test/Qwen/**
-!scripts/**/*.py
-!scripts/**/*.ipynb
-**/*.json
+!scripts/test/Qwen/*.py
+scripts/test/**/*.json
 
 # PyBuilder
 target/
