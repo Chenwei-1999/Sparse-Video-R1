@@ -76,9 +76,9 @@ def create_data(QA_data, vid_to_vidor, parent_directory, mode='train', sample_si
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="train")
-    parser.add_argument("--output_dir", type=str, default="/shares/chenwei/VLM-R1")
-    parser.add_argument("--parent_directory", type=str, default='/shares/chenwei/NExT-QA')
-    parser.add_argument("--n", type=int, default=None)
+    parser.add_argument("--output_dir", type=str, default="//mnt/c/Users/Chenwei/Desktop/VideoAgent/data")
+    parser.add_argument("--parent_directory", type=str, default='/mnt/c/Users/Chenwei/Desktop/VideoAgent/data/NExT-QA')
+    parser.add_argument("--n", type=int, default=1000)
   
     args = parser.parse_args()
     with open(os.path.join(args.parent_directory, "map_vid_vidorID.json"), "r") as f:
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         df = create_data(QA_data, vid_to_vidor, video_directory, args.mode, args.n)
     elif args.mode == "test":
         # Create test data.
-        QA_file = os.path.join(args.parent_directory, "nextqa/test.csv")
+        QA_file = os.path.join(args.parent_directory, "test-data-nextqa/test.csv")
         QA_data = pd.read_csv(QA_file)
         df = create_data(QA_data, vid_to_vidor, video_directory, args.mode, args.n)
     output_path = os.path.join(args.output_dir, args.mode)

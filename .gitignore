@@ -41,6 +41,8 @@ scripts/*
 !scripts/templete/
 !scripts/data_download/**
 !scripts/templete/**
+!scripts/**/*.py
+!scripts/**/*.ipynb
 train.sh
 
 # PyInstaller
@@ -88,6 +90,8 @@ scripts/*
 !scripts/templete/
 !scripts/data_download/**
 !scripts/templete/**
+!scripts/**/*.py
+!scripts/**/*.ipynb
 
 # PyBuilder
 target/
