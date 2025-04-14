@@ -41,6 +41,11 @@ scripts/*
 !scripts/templete/
 !scripts/data_download/**
 !scripts/templete/**
+!scripts/test/
+!scripts/test/OpenAI/
+!scripts/test/OpenAI/**
+!scripts/test/Qwen/
+!scripts/test/Qwen/**
 !scripts/**/*.py
 !scripts/**/*.ipynb
 train.sh
@@ -90,6 +95,9 @@ scripts/*
 !scripts/templete/
 !scripts/data_download/**
 !scripts/templete/**
+!scripts/test/
+!scripts/test/OpenAI/
+!scripts/test/OpenAI/**
 !scripts/**/*.py
 !scripts/**/*.ipynb
 
