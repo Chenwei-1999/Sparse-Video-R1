@@ -48,7 +48,7 @@ scripts/*
 !scripts/test/Qwen/**
 !scripts/**/*.py
 !scripts/**/*.ipynb
-**/*.json
+scripts/**/*.json
 train.sh
 
 # PyInstaller
