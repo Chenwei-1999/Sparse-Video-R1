@@ -17,6 +17,7 @@ This self-curated framing leads to sharper grounding, lower latency, and better 
 | Date       | Change                                               |
 |------------|------------------------------------------------------|
 | 2025‑04‑13 | Initial public release – code, docs, and NExT‑QA demo scripts. |
+| 2025‑04‑14 | More testing functions under `Sparse-Video-R1/scripts/test`. |
 
 ---
 
@@ -85,3 +86,37 @@ Then, launch the minimal training pipeline:
 sh train.sh
 ```
 
+## 6. Results
+
+### 6.1 NExT-QA Benchmark Results
+
+| Model | Input Type | # Frames | Accuracy |
+|-------|------------|----------|----------|
+| GPT-4o | Frames | 5 | 76% |
+| Qwen-2.5-VL-3B | Frames | 5 | 50% |
+| Qwen-2.5-VL-3B | Full Video | - | 69% |
+| Sparse-Video-R1 | Frames | 5 | 73% |
+
+> Note: More baselines and results are coming.
+
+### 6.2 Implementation Details
+
+#### Sparse-Video-R1 Configuration
+- **Base Model**: Qwen-2.5-VL-3B
+- **Frame Sampling Strategy**:
+  - Initial sampling: Random
+  - Maximum frames per round: 5
+  - Maximum rounds: 5
+- **Training Setup**:
+  - Hardware: 4x80G GPU (A100/H100 recommended)
+  - Training samples: 1,000 from training set
+  - Validation samples: 1,000 from validation set
+
+#### Baseline Models Configuration
+- **Test Setup**:
+  - Validation samples: 1,000 from validation set
+  - Frame sampling: Random
+
+For detailed baseline results and evaluation scripts, please refer to `scripts/test/`.
+
+### 6.3 Training Curves
