@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-A lightweight one-file FSDP SFT Trainer
+A lightweight one-file FSDP SFT Trainer with multi-modal support
 TODO(zhangchi.usc1992)
 - Add calculation of mfu
 - Add validation
@@ -31,7 +31,7 @@ import torch.distributed
 from torch import nn, optim
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP, MixedPrecision, ShardingStrategy, CPUOffload
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModelForCausalLM, PreTrainedModel, AutoConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, PreTrainedModel, AutoConfig, ProcessorMixin
 from verl.utils.torch_functional import get_cosine_schedule_with_warmup
 from tensordict import TensorDict
 from torch.utils.data import DataLoader, DistributedSampler
@@ -82,10 +82,21 @@ class FSDPSFTTrainer(object):
         self.device_mesh = device_mesh
         self.ulysses_device_mesh = ulysses_device_mesh
         self.sharding_manager = FSDPUlyssesShardingManager(self.ulysses_device_mesh)
-        # build tokenizer first
+        
+        # build tokenizer and processor first
         local_model_path = copy_to_local(src=self.config.model.partial_pretrain, verbose=True)
         from verl.utils import hf_tokenizer
         self.tokenizer = hf_tokenizer(local_model_path, trust_remote_code=self.config.model.trust_remote_code)
+        
+        # Initialize processor for multi-modal inputs
+        if self.config.model.get('processor_name', None):
+            self.processor = AutoProcessor.from_pretrained(
+                self.config.model.processor_name,
+                trust_remote_code=self.config.model.trust_remote_code
+            )
+        else:
+            self.processor = None
+
         if self.config.data.chat_template is not None:
             raise ValueError('Apply Chat template from config is not supported yet.')
 
@@ -120,23 +131,38 @@ class FSDPSFTTrainer(object):
 
     def _build_dataloader(self):
         config = self.config
-        # build dataset
-        self.train_dataset = SFTDataset(parquet_files=config.data.train_files,
-                                        tokenizer=self.tokenizer,
-                                        prompt_key=config.data.prompt_key,
-                                        prompt_dict_keys=config.data.get('prompt_dict_keys', None),
-                                        response_key=config.data.response_key,
-                                        response_dict_keys=config.data.get('response_dict_keys', None),
-                                        max_length=config.data.max_length,
-                                        truncation=config.data.truncation)
-        self.val_dataset = SFTDataset(parquet_files=config.data.val_files,
-                                      tokenizer=self.tokenizer,
-                                      prompt_key=config.data.prompt_key,
-                                      prompt_dict_keys=config.data.get('prompt_dict_keys', None),
-                                      response_key=config.data.response_key,
-                                      response_dict_keys=config.data.get('response_dict_keys', None),
-                                      max_length=config.data.max_length,
-                                      truncation=config.data.truncation)
+        # build dataset with multi-modal support
+        self.train_dataset = SFTDataset(
+            dataset_files=config.data.train_files,
+            tokenizer=self.tokenizer,
+            processor=self.processor,
+            prompt_key=config.data.prompt_key,
+            response_key=config.data.response_key,
+            mm_key=config.data.get('mm_key', 'videos'),
+            max_length=config.data.max_length,
+            filter_prompts=config.data.get('filter_prompts', True),
+            cache_dir=config.data.get('cache_dir', '~/.cache/verl/sft'),
+            max_frames=config.data.get('max_frames', 5),
+            resolution=config.data.get('resolution', 1.0),
+            sampling_strategy=config.data.get('sampling_strategy', None),
+            truncation=config.data.truncation
+        )
+
+        self.val_dataset = SFTDataset(
+            dataset_files=config.data.val_files,
+            tokenizer=self.tokenizer,
+            processor=self.processor,
+            prompt_key=config.data.prompt_key,
+            response_key=config.data.response_key,
+            mm_key=config.data.get('mm_key', 'videos'),
+            max_length=config.data.max_length,
+            filter_prompts=config.data.get('filter_prompts', True),
+            cache_dir=config.data.get('cache_dir', '~/.cache/verl/sft'),
+            max_frames=config.data.get('max_frames', 5),
+            resolution=config.data.get('resolution', 1.0),
+            sampling_strategy=config.data.get('sampling_strategy', None),
+            truncation=config.data.truncation
+        )
 
         # build dataloader
         # Use data parallel rank and size instead of global rank and world size
@@ -284,101 +310,42 @@ class FSDPSFTTrainer(object):
                                                             num_training_steps=self.total_steps)
 
     def _compute_loss_and_backward(self, batch, do_backward=True):
-        """Compute loss with optional sequence parallelism and remove padding features"""
-        use_sp = self.use_remove_padding and self.config.ulysses_sequence_parallel_size > 1
+        # Handle multi-modal inputs
+        input_ids = batch['input_ids']
+        attention_mask = batch['attention_mask']
+        position_ids = batch['position_ids']
+        loss_mask = batch['loss_mask']
+        
+        # Add multi-modal inputs if present
+        if batch.get('is_multi_modal', False) and 'multi_modal_inputs' in batch:
+            multi_modal_inputs = batch['multi_modal_inputs']
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                labels=input_ids,
+                **multi_modal_inputs
+            )
+        else:
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                labels=input_ids
+            )
 
-        # Move inputs to GPU and prepare loss mask
-        input_ids = batch['input_ids'].cuda()
-        attention_mask = batch['attention_mask'].cuda()
-        position_ids = batch['position_ids'].cuda()
-        loss_mask = batch.pop('loss_mask')[:, :-1].reshape(-1).cuda()
-        loss_fct = nn.CrossEntropyLoss(reduction='none')
+        # Get loss
+        loss = outputs.loss
+        
+        # Apply loss mask
+        if loss_mask is not None:
+            loss = loss * loss_mask
+            loss = loss.sum() / (loss_mask.sum() + 1e-5)
 
-        # Context manager for sequence parallel if needed
-        context = self.sharding_manager if use_sp else nullcontext()
-        with context:
-            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                if not use_sp:
-                    # Standard forward pass without sequence parallel
-                    labels = input_ids[:, 1:].contiguous()
-                    output = self.fsdp_model(input_ids=input_ids,
-                                             attention_mask=attention_mask,
-                                             position_ids=position_ids,
-                                             use_cache=False)
-                    logits = output.logits
+        if do_backward:
+            loss.backward()
 
-                    shift_logits = logits[..., :-1, :].contiguous()
-                    shift_labels = labels.contiguous()
-                    # Flatten the tokens
-                    shift_logits = shift_logits.view(-1, self.model.config.vocab_size)
-                    shift_labels = shift_labels.view(-1)
-                    # Enable model parallelism
-                    shift_labels = shift_labels.to(shift_logits.device)
-                    loss = loss_fct(shift_logits, shift_labels)
-                    loss = loss * loss_mask.to(loss.device)
-                else:
-                    # IMPORTANT: We have a big assumption here, so we can shard the SAME sequence across SP ranks
-                    # i.e., each GPU has <1 sequence, and each SP group has 1 sequence
-                    # 1. All SP ranks will receive the *SAME* batch
-                    # 2. Different SP groups will receive *DIFFERENT* batches
-                    # This is implemented by the DistributedSampler
-
-                    batch_size, seqlen = input_ids.shape
-                    # Remove padding
-                    input_ids_rmpad, indices, *_ = unpad_input(input_ids.unsqueeze(-1),
-                                                               attention_mask)  # input_ids_rmpad (total_nnz, ...)
-                    input_ids_rmpad = input_ids_rmpad.transpose(0, 1)  # (1, total_nnz)
-
-                    # Unpad position_ids to align rotary
-                    position_ids_rmpad = index_first_axis(rearrange(position_ids.unsqueeze(-1), "b s ... -> (b s) ..."),
-                                                          indices).transpose(0, 1)
-
-                    # Pad and slice inputs for sequence parallelism
-                    input_ids_rmpad_sliced, position_ids_rmpad_padded, pad_size = ulysses_pad_and_slice_inputs(
-                        input_ids_rmpad, position_ids_rmpad, sp_size=get_ulysses_sequence_parallel_world_size())
-                    # For computing loss
-                    input_ids_rmpad_rolled = torch.roll(input_ids_rmpad, shifts=-1, dims=1)  # (1, total_nnz)
-                    input_ids_rmpad_rolled, _, _ = ulysses_pad_and_slice_inputs(
-                        input_ids_rmpad_rolled, None, get_ulysses_sequence_parallel_world_size())
-                    input_ids_rmpad_rolled = input_ids_rmpad_rolled.squeeze(0)  # ((total_nnz / sp) + pad)
-
-                    # Forward pass
-                    output = self.fsdp_model(
-                        input_ids=input_ids_rmpad_sliced,
-                        attention_mask=None,  # Not needed with flash attention varlen
-                        position_ids=position_ids_rmpad_padded,
-                        use_cache=False)
-
-                    # Compute loss locally then aggregate
-                    logits_rmpad = output.logits.squeeze(0)
-                    input_ids_rmpad_rolled = input_ids_rmpad_rolled.to(logits_rmpad.device)
-                    loss = loss_fct(logits_rmpad, input_ids_rmpad_rolled)
-                    # Gather and unpad for sequence parallelism
-                    loss = gather_outpus_and_unpad(loss, gather_dim=0, unpad_dim=0, padding_size=pad_size)
-
-                    # This is the loss collected from all ulysses ranks
-                    full_loss = pad_input(hidden_states=loss.unsqueeze(-1),
-                                          indices=indices,
-                                          batch=batch_size,
-                                          seqlen=seqlen)
-                    full_loss = full_loss.squeeze(-1)[:, :-1]  # Remove last token's loss
-                    full_loss = full_loss.reshape(-1)
-                    loss_mask = loss_mask.to(full_loss.device)
-                    loss = full_loss * loss_mask
-
-                valid_token_this_rank = torch.sum(loss_mask)
-
-                if self.config.data.balance_dp_token:
-                    torch.distributed.all_reduce(valid_token_this_rank)
-                    dp_size = self.ulysses_device_mesh.size('dp') if use_sp else torch.distributed.get_world_size()
-                else:
-                    dp_size = 1
-
-                loss = torch.sum(loss) / valid_token_this_rank * dp_size
-
-                if do_backward:
-                    loss.backward()
-                return loss
+        return loss.detach()
 
     def training_step(self, batch: TensorDict):
         self.fsdp_model.train()
