@@ -3,7 +3,7 @@
 
 ![Conceptual Overview](public/sketch.png)
 
-*Figure 1: Conceptual illustration of Sparse-Video-R1's multi-round dialogue process, showing how the model iteratively requests and analyzes video frames to answer questions.*
+*Figure 1: Conceptual illustration of Sparse-Video-R1's multi-round dialogue process.*
 
 
 ## 1. What is Sparse-Video-R1?
@@ -19,7 +19,7 @@ This self-curated framing leads to sharper grounding, lower latency, and better 
 
 ![Real-world Example](public/example.png)
 
-*Figure 2: A concrete example of Sparse-Video-R1 in action, demonstrating the model's ability to iteratively request and analyze specific video frames to answer a question.*
+*Figure 2: A concrete example of Sparse-Video-R1 in action.*
 
 ---
 
