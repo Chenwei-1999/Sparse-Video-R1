@@ -49,14 +49,14 @@ cd verl
 pip install -e .
 
 # 3️⃣ Install the runtime stack
-pip install vllm==0.8.2          # vLLM backend
-pip install flash-attn --no-build-isolation
-pip install tensordict==0.6.2
-pip install --upgrade torchao    
+pip install vllm==0.8.2          # vLLM backend for efficient inference
+pip install flash-attn --no-build-isolation  # Flash attention for faster training
+pip install tensordict==0.6.2    # TensorDict for efficient data handling
+pip install --upgrade torchao    # PyTorch AO (Automatic Optimization)
 
 # 3.1 Transformer & utility extras
 pip install git+https://github.com/huggingface/transformers  # Latest transformers for Qwen-VL 2.5 support
-pip install accelerate
+pip install accelerate         # Hugging Face's acceleration library
 pip install qwen-vl-utils[decord]  # Faster video decoding (strongly recommended)
 ```
 
@@ -83,12 +83,12 @@ unzip test-data-nextqa.zip
 
 Before running the training script, update the following variables in the respective scripts:
 
-- **HF_HOME:** Directory for storing your model.
-- **DATA_DIR:** Directory for storing the data processed by `dataset/NExT_QA.py`.
-- **RAW_DATA:** Path to where you downloaded the NExT-QA dataset.
+- **HF_HOME:** Directory for storing your model (Hugging Face cache)
+- **DATA_DIR:** Directory for storing the data processed by `dataset/NExT_QA.py`
+- **RAW_DATA:** Path to where you downloaded the NExT-QA dataset
 
 Make sure to update these variables in both:
-- `scripts/run_qwen2_5_vl_template.sh`
+- `scripts/template/run_qwen2_5_vl_template.sh`
 - `train.sh`
 
 Then, launch the minimal training pipeline:
@@ -133,5 +133,31 @@ For detailed baseline results and evaluation scripts, please refer to `scripts/t
 
 ![Qwen-2.5-VL-3B Training Curve](public/Qwen_2.5_VL_3B_random_training_curve.png)
 
-*Figure: Training curve showing the performance of Qwen-2.5-VL-3B with random frame sampling strategy.*
+*Figure 3: Training curve showing the performance of Qwen-2.5-VL-3B with random frame sampling strategy.*
+
+---
+
+## 7. Contributing
+
+We welcome contributions! Please feel free to:
+- Report bugs and issues
+- Suggest improvements
+- Submit pull requests
+
+## 8. Citation
+
+If you use Sparse-Video-R1 in your research, please cite our work:
+
+```bibtex
+@article{sparse-video-r1,
+  title={Sparse-Video-R1: Advanced Video Understanding with Adaptive Frame Sampling},
+  author={Your Name and Collaborators},
+  journal={arXiv preprint},
+  year={2025}
+}
+```
+
+## 9. License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
