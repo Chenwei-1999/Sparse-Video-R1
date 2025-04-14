@@ -9,4 +9,4 @@ python dataset/NExT_QA.py --mode train --n 1000 --output_dir $DATA_DIR --parent_
 python dataset/NExT_QA.py --mode val --n 1000 --output_dir $DATA_DIR --parent_directory $RAW_DATA
 
 # Run the training script
-bash ./scripts/run_qwen2_5_vl_template.sh
+bash ./scripts/run_qwen2_5_vl_random.sh

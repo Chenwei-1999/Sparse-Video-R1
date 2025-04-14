@@ -95,6 +95,7 @@ def sample_video_frames(
     
     # Get video properties
     fps, duration = validate_video_file(video_path)
+    total_frames = int(fps * duration)
     
     # Adjust dimensions
     if width is not None:
@@ -106,7 +107,7 @@ def sample_video_frames(
     candidates = []
     for sec in range(0, int(duration) + 1):
         frame_idx = int(round(sec * fps))
-        if frame_idx < int(fps * duration):
+        if frame_idx < total_frames:
             candidates.append((frame_idx, float(sec)))
     
     total_1fps_frames = len(candidates)
@@ -139,45 +140,63 @@ def sample_video_frames(
     
     try:
         for frame_idx, timestamp in sampled_candidates:
+            # Validate frame index
+            if frame_idx >= total_frames:
+                logger.warning(f"Frame index {frame_idx} exceeds total frames {total_frames} in video {video_path}")
+                continue
+                
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
+            
             if not ret:
-                logger.warning(f"Failed to read frame {frame_idx}")
+                logger.warning(f"Failed to read frame {frame_idx} from video {video_path}. Total frames: {total_frames}, FPS: {fps}")
+                continue
+            
+            # Validate frame data
+            if frame is None or frame.size == 0:
+                logger.warning(f"Empty frame data for frame {frame_idx} in video {video_path}")
                 continue
             
             # Convert and resize frame
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(frame_rgb)
-            
-            if width is not None or height is not None:
-                orig_width, orig_height = pil_img.size
-                if width is None:
-                    new_width = int(orig_width * (height / orig_height))
-                    new_height = height
-                elif height is None:
-                    new_width = width
-                    new_height = int(orig_height * (width / orig_width))
+            try:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(frame_rgb)
+                
+                if width is not None or height is not None:
+                    orig_width, orig_height = pil_img.size
+                    if width is None:
+                        new_width = int(orig_width * (height / orig_height))
+                        new_height = height
+                    elif height is None:
+                        new_width = width
+                        new_height = int(orig_height * (width / orig_width))
+                    else:
+                        new_width, new_height = width, height
+                    pil_img = pil_img.resize((new_width, new_height))
                 else:
-                    new_width, new_height = width, height
-                pil_img = pil_img.resize((new_width, new_height))
-            else:
-                new_width, new_height = pil_img.size
-            
-            # Convert to bytes
-            buf = BytesIO()
-            pil_img.save(buf, format='JPEG')
-            image_bytes = buf.getvalue()
-            buf.close()
-            
-            sampled_frames.append({
-                'bytes': image_bytes,
-                'width': new_width,
-                'height': new_height,
-            })
-            sampled_times.append(timestamp)
+                    new_width, new_height = pil_img.size
+                
+                # Convert to bytes
+                buf = BytesIO()
+                pil_img.save(buf, format='JPEG')
+                image_bytes = buf.getvalue()
+                buf.close()
+                
+                sampled_frames.append({
+                    'bytes': image_bytes,
+                    'width': new_width,
+                    'height': new_height,
+                })
+                sampled_times.append(timestamp)
+            except Exception as e:
+                logger.warning(f"Error processing frame {frame_idx} in video {video_path}: {str(e)}")
+                continue
     
     finally:
         cap.release()
+    
+    if not sampled_frames:
+        raise ValueError(f"No frames could be successfully sampled from video {video_path}")
     
     return sampled_frames, sampled_times, total_1fps_frames
 
@@ -214,10 +233,18 @@ def sample_frames_from_next_obs(
     # Get video properties
     fps, duration = validate_video_file(video_path)
     
-    # Validate timestamps
-    invalid_timestamps = [ts for ts in timestamps if ts < 0 or ts > duration]
-    if invalid_timestamps:
-        raise ValueError(f"Invalid timestamps found: {invalid_timestamps}")
+    # Validate timestamps and filter out invalid ones
+    valid_timestamps = []
+    invalid_timestamps = []
+    for ts in timestamps:
+        if 0 <= ts <= duration:
+            valid_timestamps.append(ts)
+        else:
+            invalid_timestamps.append(ts)
+            logger.warning(f"Timestamp {ts} is outside video duration {duration}, skipping")
+    
+    if not valid_timestamps:
+        raise ValueError(f"No valid timestamps found. All timestamps were invalid: {invalid_timestamps}")
     
     # Adjust dimensions
     if width is not None:
@@ -230,7 +257,7 @@ def sample_frames_from_next_obs(
     cap = cv2.VideoCapture(video_path)
     
     try:
-        for ts in timestamps:
+        for ts in valid_timestamps:
             frame_idx = int(ts * fps)
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
@@ -270,6 +297,9 @@ def sample_frames_from_next_obs(
     
     finally:
         cap.release()
+    
+    if not sampled_frames:
+        raise ValueError("No frames were successfully sampled from the video")
     
     return sampled_frames
 

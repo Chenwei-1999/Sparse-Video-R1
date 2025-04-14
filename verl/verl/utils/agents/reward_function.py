@@ -26,7 +26,7 @@ def parse_frame_list(frame_str: str) -> List[int]:
         logger.warning(f"Failed to parse frame list: {frame_str}")
         return []
 
-def extract_solution(solution_str: str) -> Tuple[str, Union[int, Dict[str, list]]]:
+def extract_solution(solution_str: str, simplified: bool = False) -> Tuple[str, Union[int, Dict[str, list]]]:
     """
     Extract the solution type and value from the solution string.
     
@@ -34,6 +34,9 @@ def extract_solution(solution_str: str) -> Tuple[str, Union[int, Dict[str, list]
     - <think> tags for reasoning
     - <answer> tags for the actual answer
     - Optional frame modifications in format +[frames] or -[frames]
+
+    Or if it is simplified, it should contain:
+    - <answer> tags for the actual answer
     
     Args:
         solution_str (str): The solution text from the model
@@ -44,6 +47,11 @@ def extract_solution(solution_str: str) -> Tuple[str, Union[int, Dict[str, list]
             - The extracted value (answer, modification dict, or error message)
     """
     answer_match = re.search(r'<answer>(.*?)</answer>', solution_str, re.DOTALL)
+    if simplified:
+        if not answer_match:
+            return ('answer error', 'No <answer> tag found')
+        return ('answer', answer_match.group(1).strip())
+    
     think_match = re.search(r'<think>(.*?)</think>', solution_str, re.DOTALL)
 
     if not answer_match and not think_match:
@@ -97,7 +105,8 @@ def compute_score(
     correct_answer_score: float = 1.0,
     no_think_score: float = -2.0,
     modification_score: float = 0.5,
-    error_score: float = -1.0
+    error_score: float = -1.0, 
+    simplified: bool = False, 
 ) -> float:
     """
     Compute the score based on the solution string, ground truth, and rules.
@@ -123,6 +132,9 @@ def compute_score(
         no_think_score (float): Penalty for not thinking/analyzing
         modification_score (float): Base score for valid modifications
         error_score (float): Base penalty for errors
+
+    Note:
+        Currently, we only use sparse reward: 0 for incorrect answer, 1 for correct answer
         
     Returns:
         float: The calculated score in range [-2.0, 1.0]
@@ -146,7 +158,7 @@ def compute_score(
     max_turns = extra_info['max_turns']
     
     # Extract solution type and value
-    extraction_type, extracted_value = extract_solution(solution_str)
+    extraction_type, extracted_value = extract_solution(solution_str, simplified=simplified)
     
     # Debug printing (optional)
     if random.randint(1, 64) == 1:
@@ -166,4 +178,4 @@ def compute_score(
     if answer_str.lower() == ground_truth_str.lower():
         return correct_answer_score
     else:
-        return error_score
+        return format_score

@@ -453,17 +453,17 @@ class LLMGenerationManager:
         padded_gen_batch.meta_info = gen_batch.meta_info
         # Generate sequences with the padded batch.
         padded_output = self.actor_rollout_wg.generate_sequences(padded_gen_batch)
-        print(f"{padded_gen_batch.batch['input_ids'].shape[0]} sequences generated with padding, removing {padding_size} padding sequences.")
-        print(f"Generated sequences with padding: {batch_size} -> {padded_output.batch['responses'].shape[0]} sequences.")
+        # print(f"{padded_gen_batch.batch['input_ids'].shape[0]} sequences generated with padding, removing {padding_size} padding sequences.")
+        # print(f"Generated sequences with padding: {batch_size} -> {padded_output.batch['responses'].shape[0]} sequences.")
         # Remove padding from tensor fields for all keys.
         trimmed_batch = {k: v[:-padding_size] for k, v in padded_output.batch.items()}
-        print(f"Trimmed batch size: {len(trimmed_batch['responses'])} sequences after removing padding.")
+        # print(f"Trimmed batch size: {len(trimmed_batch['responses'])} sequences after removing padding.")
         padded_output.batch = trimmed_batch
         
         # Remove padding from non-tensor fields.
         trimmed_non_tensor = {}
         for k, v in padded_output.non_tensor_batch.items():
-            print("non_tensor_keys", k)
+            # print("non_tensor_keys", k)
             if isinstance(v, np.ndarray):
                 trimmed_non_tensor[k] = v[:-padding_size]
             else:
@@ -568,6 +568,9 @@ class LLMGenerationManager:
               1. There are no add frames (i.e. only remove instructions or nothing).
               2. Neither add nor remove instructions are present.
               3. The number of add frames exceeds the allowed max_frames.
+              4. Any frame timestamp exceeds the video duration.
+              5. Any frame timestamp is invalid (negative or exceeds video duration).
+              6. No frames are sampled from the video.
           - Otherwise, update the current frame selection using update_frames.
         
         The function returns:
@@ -599,8 +602,13 @@ class LLMGenerationManager:
             remove_match = re.search(r'-\[(.*?)\]', answer)
             if remove_match:
                 remove_frames = [int(x.strip()) for x in remove_match.group(1).split(',') if x.strip().isdigit()]
+            
             # If the number of frames exceeds the maximum allowed, mark as done.
-            if len(add_frames) + len(curr_frames) -len(remove_frames)> self.max_frames:
+            if len(add_frames) + len(curr_frames) - len(remove_frames) > self.max_frames:
+                dones.append(True)
+                continue
+            
+            if  len(remove_frames) >= len(curr_frames) + len(add_frames):
                 dones.append(True)
                 continue
             
@@ -609,10 +617,35 @@ class LLMGenerationManager:
             if is_done:
                 dones.append(True)
                 continue
+            
+            # Validate that all frames are within bounds
+            if any(frame < 0 for frame in new_frames):
+                dones.append(True)
+                continue
+            
+            # Get video duration from extra_info if available
+            video_duration = None
+            if hasattr(self, 'extra_info') and 'total_frames' in self.extra_info:
+                video_duration = self.extra_info['total_frames']
+            
+            # If we have video duration info, validate frames
+            if video_duration is not None and any(frame >= video_duration for frame in new_frames):
+                dones.append(True)
+                continue
+            
+            # If any frame is invalid, mark as done and don't sample
+            if any(frame < 0 or (video_duration is not None and frame >= video_duration) for frame in new_frames):
+                dones.append(True)
+                continue
+            
+            # If no frames are sampled, mark as done
+            if not new_frames:
+                dones.append(True)
+                continue
+            
             next_obs.append(new_frames)
             dones.append(False)
             
-        
         return next_obs, dones  # Return the add/remove frames for logging if needed
 
 def update_frames(current_frames: List[int], add_frames: List[int], remove_frames: List[int], max_frames: int) -> Tuple[List[int], bool]:
