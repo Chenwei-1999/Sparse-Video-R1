@@ -159,7 +159,7 @@ Our implementation introduces several modifications to the base frameworks:
 3. **Reward Function**:
    - Implemented a new reward function to handle different types of outputs
 
-These modifications have been made to better suit our specific use case of video question answering while maintaining compatibility with the core VERL framework.
+The key functionality of our framework is under `verl/verl/utils/agents`.
 
 ## 8. Citation
 
