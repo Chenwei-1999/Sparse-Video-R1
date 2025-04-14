@@ -438,7 +438,7 @@ class FSDPSFTTrainer(object):
             if self.config.trainer.default_hdfs_dir:
                 hdfs_io.makedirs(self.config.trainer.default_hdfs_dir, exist_ok=True)
                 hdfs_io.copy(src=path, dst=self.config.trainer.default_hdfs_dir, dirs_exist_ok=True)
-        torch.distributed.barrier()
+        torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
 
     def fit(self):
         rank = self.device_mesh.get_rank()
@@ -485,7 +485,7 @@ class FSDPSFTTrainer(object):
                         avg_val_loss = torch.mean(torch.stack(val_losses))
                         metric = {'val/loss': avg_val_loss.detach().item()}
                         tracking.log(data=metric, step=global_step)
-                    torch.distributed.barrier()
+                    torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
 
                     # Save final checkpoint
                     self.save_checkpoint(step=global_step)
@@ -501,7 +501,7 @@ class FSDPSFTTrainer(object):
                 val_loss = torch.mean(torch.stack(val_losses))
                 metric = {'val/loss': val_loss.detach().item()}
                 tracking.log(data=metric, step=global_step)
-            torch.distributed.barrier()
+            torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
 
             # save checkpoint
             self.save_checkpoint(step=global_step)

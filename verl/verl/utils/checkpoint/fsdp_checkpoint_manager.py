@@ -125,7 +125,7 @@ class FSDPCheckpointManager(BaseCheckpointManager):
             self.previous_saved_paths = self.previous_saved_paths[keep_start:]
 
         local_path = self.local_mkdir(local_path)
-        torch.distributed.barrier()
+        torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
 
         # every rank will save its own model and optim shard
         state_dict_cfg = ShardedStateDictConfig(offload_to_cpu=True)
@@ -160,7 +160,7 @@ class FSDPCheckpointManager(BaseCheckpointManager):
 
         if "hf_model" in self.checkpoint_contents:
             # wait for everyone to dump to local
-            torch.distributed.barrier()
+            torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
 
             if self.rank == 0:
                 hf_local_path = os.path.join(local_path, 'huggingface')
@@ -168,6 +168,6 @@ class FSDPCheckpointManager(BaseCheckpointManager):
                 self.model._fsdp_wrapped_module.config.save_pretrained(hf_local_path)
                 self.processing_class.save_pretrained(hf_local_path)
 
-        torch.distributed.barrier()
+        torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
 
         self.previous_saved_paths.append(local_path)

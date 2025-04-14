@@ -58,8 +58,24 @@ def process_image(image: dict, max_pixels: int = 2048 * 2048, min_pixels: int = 
     from io import BytesIO
     from PIL import Image
 
+    # Handle empty or None image
+    if image is None:
+        raise ValueError("Received None image")
+    
+    # Handle empty dictionary
+    if isinstance(image, dict) and not image:
+        raise ValueError("Received empty image dictionary")
+
     if isinstance(image, dict):
+        if 'bytes' not in image:
+            raise ValueError("Image dictionary missing 'bytes' key")
+        if not image['bytes']:
+            raise ValueError("Image dictionary has empty bytes")
         image = Image.open(BytesIO(image['bytes']))
+
+    # Handle invalid image
+    if not image:
+        raise ValueError("Failed to load image")
 
     if (image.width * image.height) > max_pixels:
         resize_factor = math.sqrt(max_pixels / (image.width * image.height))
@@ -190,7 +206,7 @@ class RLHFDataset(Dataset):
         row_dict['question'] = chat
       
         is_multi_modal = self.mm_key in row_dict
-        num_frames = random.randint(1, self.max_frames) 
+        num_frames = self.max_frames
 
         # This project settings is, question is the raw question from each datasets, and video is the video path
         # We need sample frames from video, construct real prompt with sampled frames and questions

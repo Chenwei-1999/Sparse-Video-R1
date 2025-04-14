@@ -618,8 +618,17 @@ class CriticWorker(Worker):
     def __init__(self, config):
         super().__init__()
         import torch.distributed
+        
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.cuda.set_device(local_rank)
+        
         if not torch.distributed.is_initialized():
-            torch.distributed.init_process_group(backend="nccl")
+            torch.distributed.init_process_group(
+                backend="nccl",
+                init_method='env://',
+                world_size=int(os.environ["WORLD_SIZE"]),
+                rank=int(os.environ["RANK"])
+            )
         self.config = config
 
         # build device mesh for Ulysses Sequence Parallel

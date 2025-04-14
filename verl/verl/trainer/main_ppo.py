@@ -30,6 +30,7 @@ def get_custom_reward_fn(config):
         return None
 
     if not os.path.exists(file_path):
+
         raise FileNotFoundError(f"Reward function file '{file_path}' not found.")
 
     spec = importlib.util.spec_from_file_location("custom_module", file_path)
