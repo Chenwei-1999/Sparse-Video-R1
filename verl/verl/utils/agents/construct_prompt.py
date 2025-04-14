@@ -25,20 +25,17 @@ def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_roun
         if len(previous_frames) == 0:
             return ""
         
-        lines = ["This is the history of previous rounds:"]
-        # Round 1: no actions, just the selected frames.
-        lines.append(f"Round 1: the frames selected are: [{', '.join(map(str, previous_frames[0]))}]")
-        
         # For rounds 2 and onward, show the action and resulting frames.
-        if len(previous_frames) >= 2:
+        else:
+            lines = ["This is the history of previous rounds:"]
             # It is assumed that len(previous_frames) == len(previous_rounds) + 1.
-            for i in range(1, len(previous_frames)):
+            for i in range(1, len(previous_frames)+1):
                 # add_frames, remove_frames = previous_rounds[i - 1]
                 # add_str = f"add [{', '.join(map(str, add_frames))}]" if add_frames else ""
                 # remove_str = f"remove [{', '.join(map(str, remove_frames))}]" if remove_frames else ""
                 # action_str = f"you {add_str} {remove_str}".strip()
                 # lines.append(f"Round {i + 1}: {action_str}, so the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
-                lines.append(f"Round {i}: the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
+                lines.append(f"Round {i}: the frames selected are: [{', '.join(map(str, previous_frames[i-1]))}]")
         return "\n".join(lines)
     video_info = f"sampled from total {total_frames} frames (decoded at 1 fps)" if total_frames else "frames (decoded at 1 fps)"
     previous_history_str = format_previous_history(previous_frames)

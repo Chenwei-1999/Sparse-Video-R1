@@ -120,3 +120,8 @@ sh train.sh
 For detailed baseline results and evaluation scripts, please refer to `scripts/test/`.
 
 ### 6.3 Training Curves
+
+![Qwen-2.5-VL-3B Training Curve](public/Qwen_2.5_VL_3B_random_training_curve.png)
+
+*Figure: Training curve showing the performance of Qwen-2.5-VL-3B with random frame sampling strategy.*
+
