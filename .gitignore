@@ -36,10 +36,11 @@ var/
 *.egg
 
 # scripts
-scripts/
-!scripts/NextQA.sh
-!scripts/run_qwen2_5_vl_template.sh
-!scripts/data_download
+scripts/*
+!scripts/data_download/
+!scripts/templete/
+!scripts/data_download/**
+!scripts/templete/**
 train.sh
 
 # PyInstaller
@@ -82,11 +83,11 @@ instance/
 docs/_build/
 
 # scipts
-scripts/
-!scripts/data_download
-!scripts/templete
-
-
+scripts/*
+!scripts/data_download/
+!scripts/templete/
+!scripts/data_download/**
+!scripts/templete/**
 
 # PyBuilder
 target/
