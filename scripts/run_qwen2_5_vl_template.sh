@@ -1,14 +1,17 @@
+#!/bin/bash
 set -x
 
+# Environment variables
 export HF_HOME=/path/to/huggingface_cache
 export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
-export DATA_DIR=/path/to/pocessed_data
+export DATA_DIR=/path/to/processed_data
 export ROLLOUT_TP_SIZE=4
 export EXPERIMENT_NAME=qwen2.5-3b
-export SAMPLING_STRATEGY=all #choose from "all", "random", "uniform"
+export SAMPLING_STRATEGY=all  # Options: "all", "random", "uniform"
 # export VLLM_ATTENTION_BACKEND=XFORMERS
 
+# Run training with PPO
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$DATA_DIR/train/nextqa.json \
