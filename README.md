@@ -1,4 +1,4 @@
-<h1 style="text-align: center;">Sparse-Video-R1: Avdance Video Understanding with Adaptive Frames Sampling</h1>
+<h1 style="text-align: center;">Sparse-Video-R1: Advance Video Understanding with Adaptive Frames Sampling</h1>
 
 ## 1. What is Sparse-Video-R1?
 Sparse-Video-R1 is a lightweight extension for **Vision‑Language Models (VLMs)** that teaches them to reason about *which* video frames they actually need.  
@@ -30,11 +30,10 @@ This self‑curated framing leads to sharper grounding, lower latency, and bette
 
 ```bash
 # 1️⃣  Create a clean environment
-conda create -n verl python=3.10 -y
-conda activate verl
+conda create -n VideoR1 python=3.10 -y
+conda activate VideoR1
 
 # 2️⃣  Clone and install VERL (base repo)
-git clone https://github.com/volcengine/verl.git
 cd verl
 pip install -e .
 
@@ -63,7 +62,7 @@ pip install gdown
 Then download and unpack:
 ```bash
 # 4️⃣  Fetch everything
-cd /path/to/row_data
+cd /path/to/raw_data
 gdown --folder https://drive.google.com/drive/folders/1gKRR2es8-gRTyP25CvrrVtV6aN5UxttF
 
 # 5️⃣  Unzip

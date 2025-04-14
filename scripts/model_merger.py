@@ -23,6 +23,23 @@ from torch.distributed._tensor import DTensor, Shard, Placement
 
 
 def merge_by_placement(tensors: List[torch.Tensor], placement: Placement):
+    """
+    Merge tensors based on their placement type in the distributed tensor system.
+    
+    Args:
+        tensors (List[torch.Tensor]): List of tensors to be merged
+        placement (Placement): The placement type of the tensors, which can be:
+            - Replicate: All tensors are identical copies
+            - Partial: Tensors are partially replicated (not supported)
+            - Shard: Tensors are sharded across a dimension
+            
+    Returns:
+        torch.Tensor: The merged tensor
+        
+    Raises:
+        NotImplementedError: If the placement type is Partial
+        ValueError: If the placement type is not supported
+    """
     if placement.is_replicate():
         return tensors[0]
     elif placement.is_partial():

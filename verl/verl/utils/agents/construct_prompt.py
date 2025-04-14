@@ -1,7 +1,5 @@
 import textwrap
 
-import textwrap
-
 def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_rounds=5, max_frames=5, previous_frames=[]):
     """
     Generate a prompt string based on the provided video frames, question, and round details.

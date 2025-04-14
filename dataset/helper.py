@@ -1,8 +1,9 @@
-
 import cv2 
 import base64
-
 import numpy as np
+from openai import OpenAI
+
+client = OpenAI()  # Initialize OpenAI client
 
 def sample_frames(video_path, num_frames=None, frames=None, max_frames=10, method='random'):
     """
@@ -121,7 +122,32 @@ def extract_answer(text):
 
     return {"add": add_frames, "remove": remove_frames}
 
+def generate_prompt(question, times):
+    """
+    Generate a prompt for the model based on the question and frame times.
+    
+    Args:
+        question (str): The question to be answered
+        times (list): List of timestamps for the frames
+        
+    Returns:
+        str: Formatted prompt for the model
+    """
+    return f"Question: {question}\nFrames at times: {', '.join(map(str, times))}"
+
 def get_answer(question, video_path, max_frames=5, frames=None):
+    """
+    Get answer for a question about a video using GPT-4.
+    
+    Args:
+        question (str): The question to be answered
+        video_path (str): Path to the video file
+        max_frames (int): Maximum number of frames to sample
+        frames (list, optional): Specific frames to use
+        
+    Returns:
+        dict or int: The extracted answer
+    """
     sampled_frames_base64, times = sample_frames(video_path, max_frames=max_frames, frames=frames)
     text_message = {"type": "text", "text": generate_prompt(question, times)}
     image_messages = [
@@ -130,7 +156,7 @@ def get_answer(question, video_path, max_frames=5, frames=None):
     ]
     combined_content = [text_message] + image_messages
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4-vision-preview",  # Updated to correct model name
         messages=[
             {"role": "user", "content": combined_content},
         ],
