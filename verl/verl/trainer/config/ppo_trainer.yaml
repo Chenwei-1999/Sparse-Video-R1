@@ -187,7 +187,7 @@ trainer:
   balance_batch: True
   total_epochs: 30
   total_training_steps: null
-  project_name: verl_examples
+  project_name: verl_yz
   experiment_name: VideoSearchTest
   logger: [ 'console', 'wandb' ]
   val_generations_to_log_to_wandb: 0

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Set environment variables
-export RAW_DATA=/mnt/c/Users/Chenwei/Desktop/VideoAgent
-export DATA_DIR=/mnt/c/Users/Chenwei/Desktop/VideoAgent/dataset
+export RAW_DATA=/home/zye52/scr4_hlee283/zye52/NExT-QA
+export DATA_DIR=/home/zye52/scr4_hlee283/zye52/NExT-QA-processed-data
 
 # Process training and validation data
 python dataset/NExT_QA.py --mode train --n 1000 --output_dir $DATA_DIR --parent_directory $RAW_DATA
