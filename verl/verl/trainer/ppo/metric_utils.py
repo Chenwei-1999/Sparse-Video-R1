@@ -128,6 +128,20 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
         'prompt_length/clip_ratio':
             torch.mean(torch.eq(prompt_length, max_prompt_length).float()).detach().item(),
     }
+    if 'extra_info' in batch.non_tensor_batch:
+        turn_list = []
+        for info in batch.non_tensor_batch['extra_info']:
+            if isinstance(info, dict):
+                turn = info.get("current_turn", 0)
+                turn_list.append(turn)
+        if turn_list:
+            turn_tensor = torch.tensor(turn_list, dtype=torch.float32)
+            metrics.update({
+                "dialogue/turns/mean": turn_tensor.mean().item(),
+                "dialogue/turns/max": turn_tensor.max().item(),
+                "dialogue/turns/min": turn_tensor.min().item(),
+            })
+
     return metrics
 
 
@@ -166,3 +180,4 @@ def compute_throughout_metrics(batch: DataProto, timing_raw: Dict[str, float], n
         'perf/time_per_step': time,
         'perf/throughput': total_num_tokens / (time * n_gpus),
     }
+
