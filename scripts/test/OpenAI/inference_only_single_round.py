@@ -19,9 +19,9 @@ from verl.utils.agents.frames_sampler import sample_video_frames, encode_image_t
 
 # Configuration
 API_KEY = ""
-DATA_PATH = ""
-NUM_DATA = 100
-OUTPUT_PATH = "gpt_video_responses.json"
+DATA_PATH = "/home/zye52/scr4_hlee283/zye52/EgoSchema-processed-data/val/egoschema.json"
+NUM_DATA = 10
+OUTPUT_PATH = "gpt_video_responses_egoschema.json"
 NUM_FRAMES = 5
 MODEL_NAME = "gpt-4o"
 MAX_TOKENS = 10000
@@ -159,15 +159,17 @@ def process_single_item(item: Dict) -> Dict:
 def calculate_accuracy(results: List[Dict]) -> Tuple[float, int, int]:
     """Calculate accuracy of model predictions."""
     correct = 0
-    total = len(results)
+    total = 0
     
     for result in results:
         try:
             # Extract prediction from response text
             prediction = re.search(r'<answer>([0-4])</answer>', result['response_text']).group(1)
+            if prediction is not None:
+                total += 1
             # Compare with ground truth (convert both to string for comparison)
-            if str(prediction) == str(result['ground_truth']):
-                correct += 1
+                if str(prediction) == str(result['ground_truth']):
+                    correct += 1
         except:
             continue
             

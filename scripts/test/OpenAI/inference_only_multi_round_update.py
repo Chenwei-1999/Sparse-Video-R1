@@ -1,11 +1,3 @@
-"""
-Video Question Answering using GPT-4 Vision API with Multi-round Processing
-
-This script processes video frames and uses GPT-4 Vision to answer questions about the video content
-through multiple rounds of interaction. It loads video data from a JSON file, extracts frames,
-and evaluates the model's performance.
-"""
-
 import os
 import openai
 import json
@@ -20,13 +12,14 @@ from verl.utils.agents.frames_sampler import sample_video_frames, sample_frames_
 
 # Configuration
 API_KEY = ""
-DATA_PATH = "/home/zye52/scr4_hlee283/zye52/NExT-QA-processed-data/val/nextqa.json"
-OUTPUT_PATH = "gpt_video_responses_multiround_update.json"
+DATA_PATH = "/home/zye52/scr4_hlee283/zye52/EgoSchema-processed-data/val/egoschema.json"
+OUTPUT_PATH = "gpt_video_responses_multiround_egoschema.json"
 NUM_FRAMES = 5
 MAX_FRAMES = 5
-NUM_DATA = 500 
+NUM_DATA = 10
 MODEL_NAME = "gpt-4o"
 MAX_TOKENS = 10000
+
 MAX_ROUNDS = 5
 
 # Initialize OpenAI client
@@ -48,49 +41,45 @@ def load_data(file_path: str) -> List[Dict]:
         raise
 
 def extract_answer(text: str) -> Tuple[Union[int, str], List[float], List[float], List[float]]:
-    # Extract answer
     answer_match = re.search(r'<answer>(.*?)</answer>', text)
     if not answer_match:
-        return -1, None
-        
+        return -1, [], [], []
+
     answer_content = answer_match.group(1).strip()
-    
-    # Check for frame modifications in the answer
-    frame_modifications = None
+
+    frame_modifications = []
+    add_frames = []
+    remove_frames = []
+
     if '+' in answer_content or '-' in answer_content:
         try:
-            # Extract all numbers from the modifications
             numbers = re.findall(r'[+-]\[([\d.,\s]+)\]', answer_content)
             numbres_add = re.findall(r'\+\[([\d.,\s]+)\]', answer_content)
             numbers_remove = re.findall(r'-\[([\d.,\s]+)\]', answer_content)
-            if numbers:
-                # Flatten the list of numbers and convert to floats
-                frame_modifications = []
-                add_frames = []
-                remove_frames = []
-                for num_str in numbers:
-                    frame_modifications.extend([float(x.strip()) for x in num_str.split(',')])
-                for nums in numbres_add:
-                    add_frames += [float(x) for x in nums.split(',')]
-                for nums in numbers_remove:
-                    remove_frames += [float(x) for x in nums.split(',')]
-                frame_modifications = sorted(list(set(frame_modifications)))
-                add_frames = sorted(set(add_frames))
-                remove_frames = sorted(set(remove_frames))  # Remove duplicates and sort
-        except:
-            frame_modifications = None
 
-    
-    # If there are frame modifications, return -1 to continue the round
-    if frame_modifications:
-        return -1, frame_modifications,add_frames,remove_frames
-    
-    # For multiple choice questions, return the number
+            for num_str in numbers:
+                frame_modifications.extend([float(x.strip()) for x in num_str.split(',')])
+            for nums in numbres_add:
+                add_frames += [float(x.strip()) for x in nums.split(',')]
+            for nums in numbers_remove:
+                remove_frames += [float(x.strip()) for x in nums.split(',')]
+
+            frame_modifications = sorted(set(frame_modifications))
+            add_frames = sorted(set(add_frames))
+            remove_frames = sorted(set(remove_frames))
+        except Exception as e:
+            print("Warning: Failed to parse frame modifications:", str(e))
+            return -1, [], [], []
+
+        return -1, frame_modifications, add_frames, remove_frames
+
+    # Multiple choice answer
     if answer_content in ["0", "1", "2", "3", "4"]:
-        return int(answer_content), [],[],[]
-    
-    # For open-ended questions, return the text
-    return answer_content, [],[],[]
+        return int(answer_content), [], [], []
+
+    # Open-ended answer
+    return answer_content, [], [], []
+
 
 def get_answer(question: str, video_path: str, max_frames: int = 5, 
               height: int = 512, width: int = 512,
@@ -282,18 +271,18 @@ def process_single_item(item: Dict) -> Dict:
 def calculate_accuracy(results: List[Dict]) -> Tuple[float, int, int]:
     """Calculate accuracy of model predictions."""
     correct = 0
-    total = len(results)
+    total = 0
     
     for result in results:
         try:
-            # Extract prediction from response text
             prediction = re.search(r'<answer>([0-4])</answer>', result['response_text'][-1]).group(1)
             # Compare with ground truth (convert both to string for comparison)
-            if str(prediction) == str(result['ground_truth']):
-                correct += 1
+            if prediction != None:
+                total += 1
+                if str(prediction) == str(result['ground_truth']):
+                    correct += 1
         except:
-            continue
-            
+            continue    
     accuracy = (correct / total) * 100 if total > 0 else 0
     return accuracy, correct, total
 
