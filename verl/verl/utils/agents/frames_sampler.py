@@ -225,7 +225,7 @@ def sample_frames_from_next_obs(
         ValueError: If video is invalid or timestamps are invalid
     """
     # Validate parameters
-    if not timestamps:
+    if len(timestamps) == 0:
         raise ValueError("timestamps list cannot be empty")
     if ratio <= 0 or ratio > 1:
         raise ValueError("ratio must be between 0 and 1")

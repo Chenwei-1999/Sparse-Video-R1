@@ -1,10 +1,10 @@
 set -x
 
-export HF_HOME=/shares/hlw3876/chenwei
-export N_GPUS=2
+export HF_HOME=/scratch/cxk2993
+export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
-export DATA_DIR=/shares/hlw3876/chenwei/VLM-R1
-export ROLLOUT_TP_SIZE=2
+export DATA_DIR=/scratch/cxk2993/VLM-R1
+export ROLLOUT_TP_SIZE=4
 export EXPERIMENT_NAME=qwen2.5-3b-uniform
 export SAMPLING_STRATEGY=uniform #choose from "all", "random", "uniform"
 # export VLLM_ATTENTION_BACKEND=XFORMERS
@@ -12,7 +12,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$DATA_DIR/train/nextgqa.json \
     data.val_files=$DATA_DIR/test/nextgqa.json \
-    data.train_batch_size=2 \
+    data.train_batch_size=8 \
     data.max_prompt_length=8192 \
     data.val_batch_size=16 \
     data.max_response_length=512 \
@@ -20,7 +20,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.path=$BASE_MODEL \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size=2 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=4 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0 \

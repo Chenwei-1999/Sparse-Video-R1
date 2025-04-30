@@ -48,11 +48,10 @@ def create_data(QA_data, vid_to_vidor, video_directory, mode='train', sample_siz
                 if str(video_id) not in frame2time:
                     continue
             time = frame2time.get(str(video_id)).get('location').get(str(q_id))
-            
             # Build a prompt that includes your original multi-GPU (video/frame) info.
             q_prompt = f"{question}? 0: {a0}; 1: {a1}; 2: {a2}; 3: {a3}; 4: {a4}"
             # transfer the answer from str to the index of the answer choices
-            mapping = {'a0': 0, 'a1': 1, 'a2': 2, 'a3': 3, 'a4': 4}
+            mapping = {a0: 0, a1: 1, a2: 2, a3: 3, a4: 4}
             answer_index = mapping.get(answer)
             # Additional info
             frame_count = qa_entry['frame_count'].values[0]
@@ -61,22 +60,23 @@ def create_data(QA_data, vid_to_vidor, video_directory, mode='train', sample_siz
             original_id = qa_entry['video_id'].values[0]    
             # Build the final data sample.
             sample = {
-                "height": int(height),
-                "width": int(width),
                 "id": int(id),
-                "original_id": int(original_id),
                 "dataset_name": "NExT-QA",
-                "num_frames": int(frame_count),
                 "problem": str(q_prompt),
-                "video": str(video_path),
                 "data_source": "video",  # This is used to identify the dataset for reward model evaluation
+                "mm_key": "frames",
                 "reward_model": {
                   "ground_truth": str(answer_index)  # This is used for reward model evaluation
                 },
                 "extra_info": {
                     "type": mode,
                     'index': int(id),
-                    'time': time
+                    'time': time,
+                    "height": int(height),
+                    "width": int(width),
+                    "original_id": int(original_id),
+                    "num_frames": int(frame_count),
+                    "video_path": str(video_path),
                 }
             }
             dataset.append(sample)
@@ -87,11 +87,10 @@ def create_data(QA_data, vid_to_vidor, video_directory, mode='train', sample_siz
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="train", choices=["train", "test"])
-    parser.add_argument("--output_dir", type=str, default="/shares/hlw3876/chenwei/VLM-R1")
-    parser.add_argument("--video_directory", type=str, default='/shares/hlw3876/chenwei/NExT-QA')
-    parser.add_argument("--parent_directory", type=str, default='/shares/hlw3876/chenwei/NExT-GQA/nextgqa')
+    parser.add_argument("--output_dir", type=str, default="/scratch/cxk2993/VLM-R1")
+    parser.add_argument("--video_directory", type=str, default='/scratch/cxk2993/NExT-QA')
+    parser.add_argument("--parent_directory", type=str, default='/scratch/cxk2993/NExT-GQA/nextgqa')
     parser.add_argument("--n", type=int, default=None)
-  
     args = parser.parse_args()
     with open(os.path.join(args.parent_directory, "map_vid_vidorID.json"), "r") as f:
         vid_to_vidor = json.load(f)

@@ -16,35 +16,36 @@ Utilities to check if packages are available.
 We assume package availability won't change during runtime.
 """
 
+import importlib.util
 from functools import cache
-from typing import List
+from typing import List, Optional
 
 
 @cache
 def is_megatron_core_available():
     try:
-        from megatron.core import parallel_state as mpu
-        return True
-    except ImportError:
-        return False
+        mcore_spec = importlib.util.find_spec("megatron.core")
+    except ModuleNotFoundError:
+        mcore_spec = None
+    return mcore_spec is not None
 
 
 @cache
 def is_vllm_available():
     try:
-        import vllm
-        return True
-    except ImportError:
-        return False
+        vllm_spec = importlib.util.find_spec("vllm")
+    except ModuleNotFoundError:
+        vllm_spec = None
+    return vllm_spec is not None
 
 
 @cache
 def is_sglang_available():
     try:
-        import sglang
-        return True
-    except ImportError:
-        return False
+        sglang_spec = importlib.util.find_spec("sglang")
+    except ModuleNotFoundError:
+        sglang_spec = None
+    return sglang_spec is not None
 
 
 def import_external_libs(external_libs=None):
@@ -53,5 +54,30 @@ def import_external_libs(external_libs=None):
     if not isinstance(external_libs, List):
         external_libs = [external_libs]
     import importlib
+
     for external_lib in external_libs:
         importlib.import_module(external_lib)
+
+
+def load_extern_type(file_path: Optional[str], type_name: Optional[str]):
+    """Load a external data type based on the file path and type name"""
+    import importlib.util
+    import os
+
+    if not file_path:
+        return None
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Custom type file '{file_path}' not found.")
+
+    spec = importlib.util.spec_from_file_location("custom_module", file_path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as e:
+        raise RuntimeError(f"Error loading module from '{file_path}'") from e
+
+    if not hasattr(module, type_name):
+        raise AttributeError(f"Custom type '{type_name}' not found in '{file_path}'.")
+
+    return getattr(module, type_name)

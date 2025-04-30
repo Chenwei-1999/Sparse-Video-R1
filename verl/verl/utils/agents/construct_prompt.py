@@ -1,6 +1,7 @@
 import textwrap
 
-def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_rounds=5, max_frames=5, previous_frames=[]):
+def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_rounds=5, max_frames=5, 
+                    previous_frames=[], include_history=False):
     """
     Generate a prompt string based on the provided video frames, question, and round details.
 
@@ -45,28 +46,26 @@ def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_roun
         The sampled frame timestamps (in seconds) are: {timestamps}
         Please answer the following question:
 
-        {question}
+    {question}
 
-        Notice:
-        If the available frames provide enough information, answer directly. Otherwise,
-        specify which frames (in seconds) to add or remove to ensure the total does not exceed {max_frames} frames.
-        This is round {n_round} out of {max_rounds} rounds. Please try to answer the question before the final round.
+    Notice:
+    If the available frames provide enough information, answer directly. Otherwise,
+    specify which frames (in seconds) to add or remove to ensure the total does not exceed {max_frames} frames.
+    This is round {n_round} out of {max_rounds} rounds. Please try to answer the question before the final round.
+    {previous_history_str if include_history else ""}
+    You can use the following guidelines to help you decide:
+    Formatting Guidelines:
+    - To add frames: +[frame1, frame2, ...]
+    - To remove frames: -[frame1, frame2, ...]
+    - If no changes are needed, simply provide the answer.
+    - Use <think>...</think> for reasoning and <answer>...</answer> for the final response.
 
-        {previous_history_str}
+    Examples:
+    - <answer>0</answer> (if the current frames are sufficient and the answer is 0)
+    - <answer>1</answer> (if the current frames are sufficient and the answer is 1)
+    - <answer>chair</answer> (if the current frames are sufficient and the answer is "chair")
+    - <answer>+[3,4,10]-[2,5]</answer> (to add frames 3, 4, and 10 and remove frames 2 and 5)
 
-        You can use the following guidelines to help you decide:
-        Formatting Guidelines:
-        - To add frames: +[frame1, frame2, ...]
-        - To remove frames: -[frame1, frame2, ...]
-        - If no changes are needed, simply provide the answer.
-        - Use <think>...</think> for reasoning and <answer>...</answer> for the final response.
-
-        Examples:
-        - <answer>0</answer> (if the current frames are sufficient and the answer is 0)
-        - <answer>1</answer> (if the current frames are sufficient and the answer is 1)
-        - <answer>chair</answer> (if the current frames are sufficient and the answer is "chair")
-        - <answer>+[3,4,10]-[2,5]</answer> (to add frames 3, 4, and 10 and remove frames 2 and 5)
-
-    """).strip()
+""").strip()
 
     return prompt
