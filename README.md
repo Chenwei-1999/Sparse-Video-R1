@@ -49,7 +49,7 @@ cd verl
 pip install -e .
 
 # 3️⃣ Install the runtime stack
-pip install vllm==0.8.2          # vLLM backend for efficient inference
+pip install vllm==0.8.3          # vLLM backend for efficient inference
 pip install flash-attn --no-build-isolation  # Flash attention for faster training
 pip install tensordict==0.6.2    # TensorDict for efficient data handling
 pip install --upgrade torchao    # PyTorch AO (Automatic Optimization)

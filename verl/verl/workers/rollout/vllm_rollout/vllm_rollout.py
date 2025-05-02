@@ -37,7 +37,7 @@ from omegaconf import DictConfig, OmegaConf
 from tensordict import TensorDict
 from torch import nn
 from vllm import SamplingParams
-
+from vllm.sampling_params import GuidedDecodingParams
 from verl import DataProto
 from verl.third_party.vllm import LLM, vllm_version
 from verl.third_party.vllm import parallel_state as vllm_ps
@@ -128,11 +128,7 @@ class vLLMRollout(BaseRollout):
             disable_log_stats=config.disable_log_stats,
             max_num_batched_tokens=max_num_batched_tokens,
             enable_chunked_prefill=config.enable_chunked_prefill,
-<<<<<<< Updated upstream
-            **engine_kwargs,
-=======
             limit_mm_per_prompt=config.limit_mm_per_prompt,
->>>>>>> Stashed changes
         )
 
         # Offload vllm model to reduce peak memory usage
@@ -155,9 +151,16 @@ class vLLMRollout(BaseRollout):
         for k in config.keys():
             if hasattr(SamplingParams(), str(k)):
                 kwargs[k] = config.get(k)
-
+        self.regex_pattern = config.get("regex_pattern", None)
+        
+        if self.regex_pattern:
+            pattern = r"<think>.*?</think>(<frame>\+\[\d+(,\d+)*\]|\-\[\d+(,\d+)*\]</frame>|<answer>\d+</answer>)"
+            kwargs['guiding_params'] = GuidedDecodingParams(
+                regex=pattern
+            )
         print(f"kwargs: {kwargs}")
         self.sampling_params = SamplingParams(**kwargs)
+        
 
         self.pad_token_id = tokenizer.pad_token_id
 

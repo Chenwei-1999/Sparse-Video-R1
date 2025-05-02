@@ -1,6 +1,5 @@
-cd /mnt/c/Users/Chenwei/Desktop/VideoAgent/data
+cd Path/to/data
 gdown --folder https://drive.google.com/drive/folders/1gKRR2es8-gRTyP25CvrrVtV6aN5UxttF
-
 
 cd NExT-QA
 unzip NExTVideo.zip

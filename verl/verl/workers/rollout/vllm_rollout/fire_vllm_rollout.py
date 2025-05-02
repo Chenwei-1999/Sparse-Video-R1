@@ -34,7 +34,7 @@ from omegaconf import DictConfig
 from tensordict import TensorDict
 from torch import nn
 from vllm import SamplingParams
-
+from vllm.sampling_params import GuidedDecodingParams
 from verl import DataProto
 from verl.utils.torch_functional import get_response_mask, pad_sequence_to_length
 from verl.workers.rollout.vllm_rollout.vllm_rollout import vLLMRollout
@@ -68,16 +68,25 @@ class FIREvLLMRollout(vLLMRollout):
         super().__init__(actor_module, config, tokenizer, model_hf_config, **kwargs)
 
         self.use_fire_sampling = config.get("use_fire_sampling", False)
+        self.regex_pattern = config.get("regex_pattern", None)
         if self.use_fire_sampling:
             kwargs_0 = kwargs.copy()
             kwargs_0["temperature"] = 30
             kwargs_0["max_tokens"] = 1
             if "top_k" not in kwargs_0 or kwargs_0["top_k"] <= 0:
                 kwargs_0["top_k"] = 16
+
             self.sampling_params.max_tokens = config.response_length - 1
+            self.sampling_params.guiding_params = GuidedDecodingParams(
+                guidance_scale=10,
+                guidance_top_k=16,
+                guidance_temperature=30,
+                regex=r"<think>.*?</think>(<frame>\+\[\d+(,\d+)*\]|\-\[\d+(,\d+)*\]</frame>|<answer>\d+</answer>)"
+            )
             for k in config.keys():
                 if hasattr(SamplingParams(), str(k)):
                     kwargs_0[k] = config.get(k)
+                
             self.sampling_params_0 = SamplingParams(**kwargs_0)
 
     @contextmanager

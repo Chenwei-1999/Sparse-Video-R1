@@ -29,46 +29,78 @@ def parse_frame_list(frame_str: str) -> List[int]:
 
 def extract_solution(solution_str: str, total_frames: int, current_frames: List[int], simplified: bool = False) -> Tuple[str, Union[int, Dict[str, list]]]:
     """
-    Enhanced error detection for multiple-choice responses with frame validation
+    Extract solution from response with enhanced error detection
     """
     # Tag validation
     think_match = re.search(r'<think>(.*?)</think>', solution_str, re.DOTALL)
+    frame_match = re.search(r'<frame>(.*?)</frame>', solution_str, re.DOTALL)
     answer_match = re.search(r'<answer>(.*?)</answer>', solution_str, re.DOTALL)
     
     # Error type matrix
-    if not think_match and not answer_match:
-        return ('format_error', 'Missing both <think> and <answer> tags', solution_str)
     if not think_match:
         return ('think_error', 'Missing <think> reasoning section', solution_str)
-    if not answer_match:
-        return ('answer_error', 'Missing <answer> tag', solution_str)
+    if not frame_match and not answer_match:
+        return ('format_error', 'Missing both <frame> and <answer> tags', solution_str)
         
-    answer_content = answer_match.group(1).strip()
+    # If we have an answer tag, validate it
+    if answer_match:
+        answer_content = answer_match.group(1).strip()
+        if not re.match(r'^\d+$', answer_content):
+            return ('format_error', 'Answer must be a single number', solution_str)
+        return ('valid', answer_content, solution_str)
+        
+    # If we have a frame tag, validate frame operations
+    frame_content = frame_match.group(1).strip()
+    add_match = re.search(r'\+\[(.*?)\]', frame_content)
+    remove_match = re.search(r'-\[(.*?)\]', frame_content)
     
-    # Multiple-choice validation
-    if not re.match(r'^\d+$', answer_content):
-        return ('format_error', 'Answer must be a single number (0-4)', solution_str)
-    if answer_content not in {'0', '1', '2', '3', '4'}:
-        return ('invalid_answer', f'Invalid choice {answer_content} - must be 0-3', solution_str)
-
-    # Frame modification validation (original requirements)
-    add_match = re.search(r'\+\[(.*?)\]', answer_content)
-    remove_match = re.search(r'-\[(.*?)\]', answer_content)
-    
+    if not (add_match or remove_match):
+        return ('frame_error', 'Invalid frame operation format', solution_str)
+        
     # Frame error cases
-    if add_match or remove_match:
-        added = parse_frame_list(add_match.group(1)) if add_match else []
-        removed = parse_frame_list(remove_match.group(1)) if remove_match else []
+    added = parse_frame_list(add_match.group(1)) if add_match else []
+    removed = parse_frame_list(remove_match.group(1)) if remove_match else []
+    
+    # Validate frame operations
+    if any(f not in current_frames for f in removed):
+        return ('frame_error', 'Trying to remove non-existent frames', solution_str)
+    if len(current_frames) - len(removed) + len(added) > total_frames:
+        return ('frame_error', 'Exceeds maximum allowed frames', solution_str)
+    if any(f in current_frames for f in added):
+        return ('frame_error', 'Adding duplicate frames', solution_str)
         
-        # Validate frame operations
-        if any(f not in current_frames for f in removed):
-            return ('frame_error', 'Trying to remove non-existent frames', solution_str)
-        if len(current_frames) - len(removed) + len(added) > total_frames:
-            return ('frame_error', 'Exceeds maximum allowed frames', solution_str)
-        if any(f in current_frames for f in added):
-            return ('frame_error', 'Adding duplicate frames', solution_str)
+    return ('valid', {'add': added, 'remove': removed}, solution_str)
 
-    return ('valid', answer_content, solution_str)
+def extract_answer(text: str) -> Optional[str]:
+    """
+    Extract either frame operations or final answer from the response.
+    
+    Args:
+        text (str): Input text containing frame or answer tags
+        
+    Returns:
+        Optional[str]: Extracted frame operations or answer text, or None if invalid
+    """
+    if not text:
+        return None
+        
+    # First check for frame operations
+    frame_match = re.search(r'<frame>(.*?)</frame>', text, re.DOTALL)
+    if frame_match:
+        frame_content = frame_match.group(1).strip()
+        if not frame_content:
+            return None
+        return frame_content
+        
+    # Then check for final answer
+    answer_match = re.search(r'<answer>(.*?)</answer>', text, re.DOTALL)
+    if answer_match:
+        answer_content = answer_match.group(1).strip()
+        if not answer_content:
+            return None
+        return answer_content
+        
+    return None
 
 def discretize_time_intervals(intervals: List[List[float]]) -> Set[float]:
     """
@@ -108,77 +140,71 @@ def compute_score(
     solution_str: str,
     ground_truth: Any,
     extra_info: Optional[Dict[str, Any]] = None,
-    # --- Add Tuning Parameters ---
+    status: str = 'running'
 ) -> float:
+    """
+    Compute reward score based on Jaccard similarity between selected frames and ground truth.
     
-    
+    Args:
+        data_source: Source of the data
+        solution_str: Model's solution string
+        ground_truth: Ground truth frame timestamps
+        extra_info: Additional information dictionary containing current frames
+        
+    Returns:
+        float: Jaccard similarity score between 0 and 1
+    """
     if extra_info is None:
         extra_info = {}
     
-    required_fields = ['timestamps', 'max_frames', 'current_turn', 'max_turns', 'time', 'type']
-    missing_fields = [field for field in required_fields if field not in extra_info]
+    # Validate required fields
+    required_fields = {
+        'times': 'Current frame times',
+        'max_frames': 'Maximum allowed frames',
+    }
+    
+    missing_fields = []
+    for field, desc in required_fields.items():
+        if field not in extra_info:
+            missing_fields.append(f"{field} ({desc})")
+    
     if missing_fields:
-        # Consider returning a specific penalty or raising a more specific error
-        raise ValueError(f"Missing required fields in extra_info: {missing_fields}")
+        raise ValueError(f"Missing required fields in extra_info: {', '.join(missing_fields)}")
 
-    timestamps = extra_info['timestamps']
-    time_intervals = extra_info.get('time', []) # Default to empty list if 'time' is missing
+    # Get current frame selection
+    current_frames = set(extra_info['times'])
+    if not current_frames:
+        logger.warning("Empty current frame selection")
+        return 0.0
 
-  
-    if not isinstance(time_intervals, list) or not all(isinstance(i, list) and len(i) == 2 for i in time_intervals):
-         logger.warning(f"Invalid time_intervals format: {time_intervals}. Assuming no relevant intervals.")
-         time_intervals = []
+    # Convert ground truth to set of frames
+    if isinstance(ground_truth, (list, np.ndarray)):
+        ground_truth_frames = set(float(t) for t in ground_truth)
+    else:
+        logger.warning(f"Invalid ground truth format: {type(ground_truth)}")
+        return 0.0
 
-    interval_timestamps = discretize_time_intervals(time_intervals)
-    reference_timestamps = convert_timestamps_to_set(timestamps)
-    similarity_score = calculate_jaccard_similarity(interval_timestamps, reference_timestamps)
+    # Calculate Jaccard similarity
+    if not ground_truth_frames:  # Empty ground truth
+        return 0.0
+        
+    # Calculate intersection and union
+    intersection = len(current_frames.intersection(ground_truth_frames))
+    union = len(current_frames.union(ground_truth_frames))
+    
+    # Compute Jaccard similarity
+    jaccard_score = intersection / union if union > 0 else 0.0
+    
+    # Add debug logging occasionally
+    if random.randint(1, 64) == 1:
+        debug_info = {
+            'Current Frames': sorted(list(current_frames)),
+            'Ground Truth Frames': sorted(list(ground_truth_frames)),
+            'Intersection Size': intersection,
+            'Union Size': union,
+            'Jaccard Score': f"{jaccard_score:.4f}",
+        }
+        logger.info("Score Computation Debug Info:\n" + 
+                   "\n".join(f"{k}: {v}" for k, v in debug_info.items()))
 
-
-    # ... (previous code: validate extra_info, calculate similarity_score) ...
-
-
-    extraction_type, extracted_value, extracted_solution = extract_solution(
-        solution_str,
-        total_frames=extra_info['max_frames'],
-        current_frames=extra_info['timestamps'],
-        simplified=False
-    )
-    ground_truth_str = str(ground_truth).strip()
-
-    if extraction_type == 'valid':
-        answer_str = str(extracted_value).strip()
-        is_correct = (answer_str.lower() == ground_truth_str.lower())
-        if is_correct:
-            final_score = similarity_score*0.5 + 1*0.5
-        else:
-            final_score = similarity_score
-        # Optional: Add a small base reward if the format is correct, even if the answer is wrong?
-        # score = max(score, -0.8) # Ensure score doesn't drop too low just for being wrong
-    else: 
-        final_score = 0.0
-    # elif extraction_type == 'modify':
-    #     score = (1.0 - similarity_score) * modification_bonus_factor - similarity_score * modification_penalty_factor
-
-    # elif extraction_type in ['mistake', 'think error', 'answer error', 'both error']:
-    #     # Penalize formatting/logic errors
-    #     score = error_penalty 
-    # else: # Should not happen, but catch all
-    #     logger.error(f"Unknown extraction type: {extraction_type}. Assigning error penalty.")
-    #     score = error_penalty
-
-    # # Clamp score to a [-1.0, 1.0] range (or other desired range)
-    # final_score = max(-1.0, min(score, 1.0)) 
-    # Debug printing (consider making this conditional or removing in production)
-    if random.randint(1, 64) == 1: # Keep infrequent debug prints
-         print("--------------------------------")
-         print(f"Ground_truth: {ground_truth_str}")
-         print(f"Extracted Type: {extraction_type}")
-         print(f"Extracted Value: {extracted_value}")
-         print(f"Extracted Solution: {extracted_solution}")
-         print(f"Sampled timestamps: {reference_timestamps}")
-         print(f"GT intervals: {interval_timestamps}")
-         print(f"Jaccard Similarity: {similarity_score:.4f}")
-         print(f"Final Clamped Score: {final_score:.4f}")
-         print("--------------------------------")
-
-    return final_score
+    return jaccard_score

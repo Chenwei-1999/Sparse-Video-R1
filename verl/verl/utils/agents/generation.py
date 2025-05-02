@@ -1,48 +1,25 @@
-import torch
-import random
-import numpy as np
+import copy
+import logging
+import os
 import re
 from collections import defaultdict
-import os
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
+
+import torch
+from omegaconf import DictConfig, ListConfig
 from dataclasses import dataclass
-from .tensor_helper import TensorHelper, TensorConfig
-from .frames_sampler import sample_frames_from_next_obs
-from .construct_prompt import generate_prompt
-from verl import DataProto
-from verl.utils.tracking import Tracking
-import verl.utils.torch_functional as verl_F
+
 from copy import deepcopy
-from tensordict import TensorDict
 from verl.utils.model import compute_position_id_with_mask
-import verl.utils.torch_functional as verl_F
-from verl.utils.agents.reward_function import extract_solution, parse_frame_list
+from verl.utils.agents.frames_sampler import sample_video_frames, sample_frames_from_next_obs
+from verl.utils.agents.construct_prompt import generate_prompt
+from verl.utils.agents.reward_function import compute_score, extract_solution, parse_frame_list, extract_answer
+from verl.utils.tracking import Tracking
+from verl.utils.agents.tensor_helper import TensorHelper, TensorConfig
+from verl.protocol import DataProto, pad_dataproto_to_divisor, unpad_dataproto
 from verl.models.transformers.qwen2_vl import get_rope_index
-def process_image(image, max_pixels: int = 2048 * 2048, min_pixels: int = 512 * 512):
-    import math
-    from io import BytesIO
-    from PIL import Image
-
-    if isinstance(image, dict):
-        image = Image.open(BytesIO(image['bytes']))
-    if isinstance(image, bytes):
-        # base64 encoded image
-        image = Image.open(BytesIO(image))
-
-    if (image.width * image.height) > max_pixels:
-        resize_factor = math.sqrt(max_pixels / (image.width * image.height))
-        width, height = int(image.width * resize_factor), int(image.height * resize_factor)
-        image = image.resize((width, height))
-
-    if (image.width * image.height) < min_pixels:
-        resize_factor = math.sqrt(min_pixels / (image.width * image.height))
-        width, height = int(image.width * resize_factor), int(image.height * resize_factor)
-        image = image.resize((width, height))
-
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-
-    return image
+from verl.utils.dataset.vision_utils import process_image, process_video
+logger = logging.getLogger(__name__)
 
 @dataclass
 class GenerationConfig:
@@ -79,140 +56,257 @@ class LLMGenerationManager:
             max_prompt_length=config.max_prompt_length,
         ))
         self.max_prompt_length = config.max_prompt_length
+        self.max_response_length = config.max_response_length
         self.truncation = 'error'
-        
-    def run_llm_loop(self, gen_batch, global_steps=None) -> Tuple[Dict, Dict]:
-        rollings = deepcopy(gen_batch)
-        batch_size = rollings.batch['input_ids'].shape[0]
-        final_response_ids_list = [None] * batch_size
+        # Initialize completion round for each batch item
+        self.completion_rounds = {}
+        # Initialize conversation history and responses
+        self.conversation_history = None
+        self.responses_history = None
 
-        original_inputs = {
-            'input_ids': gen_batch.batch['input_ids'],
-            'position_ids': gen_batch.batch['position_ids'],
-            'attention_mask': gen_batch.batch['attention_mask'],
-            'reward_model': gen_batch.non_tensor_batch['extra_info'][0].get('reward_model'),
-            'data_source': gen_batch.non_tensor_batch['extra_info'][0].get('data_source'),
-            'extra_info': gen_batch.non_tensor_batch.get('extra_info', {}),
-        }
-
-        dones = [False] * batch_size
-        meta_info = {}
-
-        for step in range(1, self.max_rounds + 1):
-            # 1) generate
-            gen_output = self._generate_with_gpu_padding(rollings)
-            responses_ids, responses_str = self._postprocess_responses(
-                gen_output.batch['responses']
-            )
-
-            # 2) error/correction
-            current_times = [rollings.non_tensor_batch['extra_info'][i]['times'] for i in range(batch_size)]
-            correction_info = self.correction(
-                responses_str, current_times
-            )
-            correction_prompts = self.correction_prompt(correction_info)
-            
-            # Store correction prompts in extra_info
-            for i in range(batch_size):
-                rollings.non_tensor_batch['extra_info'][i]['correction_prompt'] = correction_prompts[i]
-
-            # 3) mark done & collect final_response_ids_list
-            if step == self.max_rounds:
-                dones = [True] * batch_size
-            else:
-                next_obs, dones = self.execute_predictions(
-                    responses_str,
-                    current_times,
-                    correction_info
-                )
-
-            for i in range(batch_size):
-                if dones[i]:
-                    final_response_ids_list[i] = responses_ids[i]
-                    extra = {
-                        'timestamps': rollings.non_tensor_batch['extra_info'][i]['previous_times'][-1],
-                        'max_frames': self.max_frames,
-                        'current_turn': step,
-                        'max_turns': self.max_rounds,
-                    }
-                    original_inputs['extra_info'][i].update(extra)
-
-            if all(dones):
-                break
-
-            # 5) build a full‐length sampled_frames list
-            sampled_frames_batch: List[List[Dict]] = []
-            for i in range(batch_size):
-                if dones[i]:
-                    sampled_frames_batch.append([])   # placeholder for done
-                else:
-                    sampled_frames_batch.append(
-                        sample_frames_from_next_obs(
-                            rollings.non_tensor_batch['extra_info'][i]['video_path'],
-                            next_obs[i],
-                            rollings.non_tensor_batch['extra_info'][i]['height'],
-                            rollings.non_tensor_batch['extra_info'][i]['width'],
-                            ratio=self.ratio
-                        )
-                    )
-
-            # 6) update _all_ samples in place (no filtering)
-            rollings = self.update_rollings_state(
-                rollings,
-                dones,
-                sampled_frames_batch=sampled_frames_batch,
-                new_times=next_obs,
-                new_round=step + 1
-            )
-
-        final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
-        return self._compose_final_output(
-            original_inputs, final_response_ids_tensor, meta_info
-        )
-
-        
-    def _compose_final_output(self, original_inputs: Dict,
-                              responses: torch.Tensor,
-                              meta_info: Dict) -> Tuple[Dict, Dict]:
+    def _compose_final_output(self, rollings: DataProto, responses: torch.Tensor, meta_info: Dict) -> Tuple[Dict, Dict]:
         """Compose final generation output."""
-        final_output = {}
-        # Preserve original 'responses' from final_output input
         if responses is None:
             raise ValueError("Missing 'responses' in final_output")
-        # Add everything explicitly
-        final_output['prompts'] = original_inputs['input_ids']
+
+        final_output = {}
+        final_output['prompts'] = rollings.batch['input_ids']
         final_output['responses'] = responses
-    
-        final_output['input_ids'] = torch.cat([
-            original_inputs['input_ids'],
-            final_output['responses']
-        ], dim=1)
-
-        final_output['attention_mask'] = torch.cat([
-            self.tensor_fn.create_attention_mask(original_inputs['input_ids']),
-            self.tensor_fn.create_attention_mask(final_output['responses'])
-        ], dim=1)
-
-        final_output['position_ids'] = self.tensor_fn.create_position_ids(
-            final_output['attention_mask']
-        )
-        final_output['reward_model'] = original_inputs['reward_model']
-        final_output['data_source'] = original_inputs['data_source']
-        final_output['extra_info'] = original_inputs.get('extra_info', {})
+        final_output['input_ids'] = rollings.batch['input_ids']  # Already contains full context
+        final_output['attention_mask'] = rollings.batch['attention_mask']
+        final_output['position_ids'] = rollings.batch['position_ids']
+        final_output['reward_model'] = rollings.batch.get('reward_model', None)
+        final_output['data_source'] = rollings.non_tensor_batch.get('data_source', '')
+        final_output['extra_info'] = rollings.non_tensor_batch.get('extra_info', {})
+        
         final_output = DataProto.from_single_dict(final_output)
         final_output.meta_info.update(meta_info)
 
         return final_output
 
-    def pad_to_length(self, tensor: torch.Tensor, target_length: int, pad_token_id: int) -> torch.Tensor:
-        current_length = tensor.shape[0]
-        if current_length < target_length:
-            pad_size = target_length - current_length
-            pad_tensor = torch.full((pad_size,), pad_token_id, dtype=tensor.dtype, device=tensor.device)
-            return torch.cat([tensor, pad_tensor], dim=0)
-        else:
-            return tensor[:target_length]    
+    def run_llm_loop(self, gen_batch, global_steps=None) -> Tuple[Dict, Dict]:
+        """
+        Run the LLM generation loop for multiple rounds.
+        """
+        rollings = deepcopy(gen_batch)
+        batch_size = rollings.batch['input_ids'].shape[0]
+        final_response_ids_list = [None] * batch_size
+        dones = [False] * batch_size
+        meta_info = {}
         
+        # Initialize conversation history and responses for this batch
+        if self.conversation_history is None:
+            self.conversation_history = [[] for _ in range(batch_size)]
+        self.responses_history = [[] for _ in range(batch_size)]
+        
+        # Initialize completion tracking for this batch
+        self.completion_rounds = {i: self.max_rounds for i in range(batch_size)}
+
+        for step in range(1, self.max_rounds + 1):
+            # Skip if all samples are done
+            if all(dones):
+                break
+            # 1) generate responses only for non-done samples
+            active_indices = [i for i, done in enumerate(dones) if not done]
+            if not active_indices:
+                break
+
+            # Create sub-batch for active samples
+            active_batch = self._create_sub_batch(rollings, active_indices)
+            gen_output = self._generate_with_gpu_padding(active_batch)
+            
+            # Generate for active samples
+            responses_str = self.tokenizer.batch_decode(
+                gen_output.batch['responses'], 
+                skip_special_tokens=True
+            )
+
+            # Store responses in history
+            for idx, orig_idx in enumerate(active_indices):
+                self.responses_history[orig_idx].append(responses_str[idx])
+
+            # 2) error/correction checking for active samples
+            current_times = [rollings.non_tensor_batch['extra_info'][i]['times'] for i in active_indices]
+            correction_info = self.correction(responses_str, current_times)
+
+            # 3) execute predictions and get next observations
+            next_obs, step_dones = self.execute_predictions(
+                responses_str,
+                current_times,
+                correction_info
+            )
+            responses_ids = gen_output.batch['responses']
+
+            # Update done status and store completion rounds
+            for idx, orig_idx in enumerate(active_indices):
+                if step_dones[idx]:
+                    dones[orig_idx] = True
+                    self.completion_rounds[orig_idx] = step
+                    final_response_ids_list[orig_idx] = responses_ids[idx]
+                    meta_info[f'sample_{orig_idx}'] = {
+                        'final_round': step,
+                        'timestamps': rollings.non_tensor_batch['extra_info'][orig_idx]['past_times'][:step],
+                        'max_frames': self.max_frames,
+                        'max_rounds': self.max_rounds,
+                    }
+
+            # 4) Calculate rewards for active samples
+            for idx, orig_idx in enumerate(active_indices):
+                # Update current timestamps for next round
+                rollings.non_tensor_batch['extra_info'][orig_idx]['times'] = next_obs[idx]
+                # Update past_times for the current step
+                rollings.non_tensor_batch['extra_info'][orig_idx]['past_times'][step-1] = next_obs[idx]
+                rollings.non_tensor_batch['extra_info'][orig_idx]['current_turn'] = step
+                rollings.non_tensor_batch['extra_info'][orig_idx]['max_turns'] = self.max_rounds
+                
+                # Calculate reward
+                reward = compute_score(
+                    data_source=rollings.non_tensor_batch.get('data_source', ''),
+                    solution_str=responses_str[idx],
+                    ground_truth=None,
+                    extra_info=rollings.non_tensor_batch['extra_info'][orig_idx],
+                    status='running'
+                )
+                
+                # Store reward directly in rollings
+                rewards = rollings.non_tensor_batch['extra_info'][orig_idx].get('rewards', [])
+                if len(rewards) <= step - 1:
+                    rewards.extend([None] * (step - len(rewards)))
+                rewards[step-1] = reward
+                rollings.non_tensor_batch['extra_info'][orig_idx]['rewards'] = rewards
+
+            # 5) Sample frames for next round for non-done samples
+            sampled_frames_batch = []
+            for idx, orig_idx in enumerate(active_indices):
+                if step_dones[idx]:
+                    sampled_frames_batch.append([])
+                else:
+                    sampled_frames_batch.append(
+                        sample_frames_from_next_obs(
+                            rollings.non_tensor_batch['extra_info'][orig_idx]['video_path'],
+                            next_obs[idx],
+                            rollings.non_tensor_batch['extra_info'][orig_idx]['height'],
+                            rollings.non_tensor_batch['extra_info'][orig_idx]['width'],
+                            ratio=self.ratio
+                        )
+                    )
+
+            # 6) Update rolling state with new frames and observations
+            rollings = self.update_rollings_state(
+                rollings,
+                dones,  # Pass full dones list
+                sampled_frames_batch=self._expand_to_full_batch(sampled_frames_batch, active_indices, batch_size),
+                new_times=self._expand_to_full_batch(next_obs, active_indices, batch_size),
+                new_round=step + 1,
+                correction_info=self._expand_to_full_batch(correction_info, active_indices, batch_size)
+            )
+        
+        # Handle any samples that didn't finish within max_rounds
+        for i in range(batch_size):
+            if final_response_ids_list[i] is None:
+                try:
+                    active_idx = active_indices.index(i)
+                    final_response_ids_list[i] = responses_ids[active_idx]
+                except ValueError:
+                    final_response_ids_list[i] = torch.full_like(responses_ids[0], self.tokenizer.pad_token_id)
+                
+                meta_info[f'sample_{i}'] = {
+                    'final_round': self.max_rounds,
+                    'timestamps': rollings.non_tensor_batch['extra_info'][i]['past_times'],
+                    'max_frames': self.max_frames,
+                    'max_rounds': self.max_rounds,
+                }
+
+        final_response_ids_tensor = torch.stack(final_response_ids_list, dim=0)
+        return self._compose_final_output(
+            rollings, final_response_ids_tensor, meta_info
+        )
+
+    def _create_sub_batch(self, full_batch: DataProto, indices: List[int]) -> DataProto:
+        """Create a sub-batch containing only the specified indices, preserving batch, non_tensor_batch, and meta_info."""
+        # Index each tensor in the TensorDict directly (PyTorch auto-converts Python list to LongTensor)
+        new_tensors = {k: v[indices] for k, v in full_batch.batch.items()}
+        # Index each numpy array in non_tensor_batch
+        new_non_tensors = {k: full_batch.non_tensor_batch[k][indices] for k in full_batch.non_tensor_batch}
+        # Maintain the same meta_info dictionary
+        return DataProto.from_dict(
+            tensors=new_tensors,
+            non_tensors=new_non_tensors,
+            meta_info=full_batch.meta_info,
+        )
+
+    def _expand_to_full_batch(self, sub_batch_data: List, active_indices: List[int], full_size: int) -> List:
+        """Expand sub-batch data to full batch size, filling with None or empty lists for inactive samples."""
+        full_batch_data = [[] if isinstance(sub_batch_data[0], list) else None] * full_size
+        for idx, orig_idx in enumerate(active_indices):
+            full_batch_data[orig_idx] = sub_batch_data[idx]
+        return full_batch_data
+
+    def construct_prompt_tokens(self, 
+                              question: str,
+                              current_frames: List[Dict],
+                              new_times: List[float],
+                              prev_times: List[List[float]],
+                              correction: str,
+                              round_num: int,
+                              responses_history: List[str],
+                              total_frames: Optional[int] = None) -> Dict:
+        """
+        Construct prompt tokens for the current round using proper processor pipeline.
+        Returns dict with input_ids, attention_mask, and other model inputs.
+        """
+        # Construct the current prompt
+        prompt = correction if correction else generate_prompt(
+            question=question,
+            timestamps=new_times,
+            total_frames=total_frames,
+            n_round=round_num,
+            max_rounds=self.max_rounds,
+            max_frames=self.max_frames,
+        )
+
+        # Process images if present
+        images = [process_image({"image": frame['image']}) for frame in current_frames]
+        multi_modal_data = {}
+        multi_modal_data["image"] = images
+
+
+        # Construct messages with proper format
+        messages = [
+            {
+                "role": "user",
+                "content": [],
+            }
+        ]
+        
+        # Add images to messages
+        for image in images:
+            messages[0]["content"].append({"type": "image", "image": image})
+        
+        # Add text to messages
+        messages[0]["content"].append({"type": "text", "text": prompt})
+        raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        model_inputs = self.processor(text=[raw_prompt], images=images, return_tensors="pt")
+
+        # Apply chat template
+        raw_prompt = self.processor.apply_chat_template(
+            messages, 
+            add_generation_prompt=True, 
+            tokenize=False
+        )
+
+        # Process through the processor to get all necessary inputs
+        model_inputs = self.processor(
+            text=[raw_prompt], 
+            images=images if images else None,
+            return_tensors="pt"
+        )
+
+        # Remove second_per_grid_ts if present
+        if "second_per_grid_ts" in model_inputs:
+            model_inputs.pop("second_per_grid_ts")
+
+        return model_inputs
 
     def update_rollings_state(
         self,
@@ -220,95 +314,153 @@ class LLMGenerationManager:
         dones: List[bool],
         sampled_frames_batch: List[List[Dict]],
         new_times: List[List[float]],
-        new_round: int
+        new_round: int,
+        correction_info: Optional[List[Dict]] = None
     ) -> DataProto:
         """
-        Keep every sample in the DataProto.  For done samples, we simply
-        carry forward their last state; for active samples, we update in place.
+        Update the rolling state with new frames and observations.
+        Handles both text and image inputs properly through the processor.
         """
-        # Carry over everything by deep copy
-        new_rollings = deepcopy(rollings)
-
-        # Update times in extra_info for each sample
-        for i in range(len(dones)):
-            new_rollings.non_tensor_batch['extra_info'][i]['times'] = new_times[i]
-
-        for i in range(len(dones)):
-            # if done, leave new_rollings.batch[*][i] and non_tensor fields unchanged
-            if dones[i]:
-                continue
-
-            # 1) extend histories
-            new_rollings.non_tensor_batch['extra_info'][i]['previous_times'].append(new_times[i])
-
-            # 2) rebuild prompt
-            question = new_rollings.non_tensor_batch['extra_info'][i]['question']
-            prev_times = new_rollings.non_tensor_batch['extra_info'][i]['previous_times']
-            corr = new_rollings.non_tensor_batch['extra_info'][i].get('correction_prompt', '')
-
-            base = generate_prompt(
-                question=question,
-                timestamps=new_times[i],
-                n_round=new_round,
-                max_rounds=self.max_rounds,
-                max_frames=self.max_frames,
-                previous_frames=prev_times,
-            )
-            full = f"{corr}\n\n{base}" if corr else base
-            if random.randint(1, 20) == 10:
-                print(f'full: {full}')
-            # 3) build chat & template
-            num_frames = len(sampled_frames_batch[i])
-            chat = [{"role":"user","content":("<image>"*num_frames)+full}]
-            templ = self.tokenizer.apply_chat_template(
-                chat, add_generation_prompt=True, tokenize=False
-            )
-
-            # 4) multimodal if needed
-            if new_rollings.non_tensor_batch['extra_info'][i].get('is_multi_modal', False):
-                raw = templ.replace(
-                    '<image>','<|vision_start|><|image_pad|><|vision_end|>'
+        batch_size = len(dones)
+        updated_rollings = deepcopy(rollings)
+        
+        # Generate new prompts for active samples
+        active_indices = [i for i, done in enumerate(dones) if not done]
+        if active_indices:
+            for i in active_indices:
+                # Update frame history
+                if sampled_frames_batch[i]:
+                    updated_rollings.non_tensor_batch['extra_info'][i]['frames'] = sampled_frames_batch[i]
+                
+                # Update current timestamps for next round
+                if new_times[i]:
+                    updated_rollings.non_tensor_batch['extra_info'][i]['times'] = new_times[i]
+                
+                # Update round info
+                updated_rollings.non_tensor_batch['extra_info'][i]['current_round'] = new_round
+                
+                # Get correction message if needed
+                correction = ""
+                if correction_info and i < len(correction_info):
+                    if correction_info[i].get("needs_correction", False):
+                        correction = correction_info[i].get("message", "")
+                
+                # Process current round's images
+                current_frames = sampled_frames_batch[i] if sampled_frames_batch[i] else []
+                current_images = [process_image({"image": frame['image']}) for frame in current_frames]
+                
+                # Generate current round's prompt
+                prompt = correction if correction else generate_prompt(
+                    question=updated_rollings.non_tensor_batch['extra_info'][i]['question'],
+                    timestamps=new_times[i] if new_times[i] else [],
+                    total_frames=updated_rollings.non_tensor_batch['extra_info'][i].get('total_frames'),
+                    n_round=new_round,
+                    max_rounds=self.max_rounds,
+                    max_frames=self.max_frames,
                 )
-                imgs = [process_image(f) for f in sampled_frames_batch[i]]
-                new_rollings.non_tensor_batch['extra_info'][i]['multi_modal_data'] = {"image": imgs}
-                img_inputs = self.processor.image_processor(imgs, return_tensors='pt')
-                new_rollings.non_tensor_batch['extra_info'][i]['multi_modal_inputs'] = img_inputs
-
-                input_ids, attn_mask = verl_F.tokenize_and_postprocess_data(
-                    prompt=templ,
-                    tokenizer=self.tokenizer,
-                    max_length=self.max_prompt_length,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    left_pad=True,
-                    truncation=self.truncation
+                
+                # Initialize conversation history if needed (only do this once, not every round)
+                if i >= len(self.conversation_history) or self.conversation_history[i] is None:
+                    self.conversation_history[i] = []
+                    
+                # Add current round's content to history in sequence
+                # Add images for this round
+                if current_images:
+                    for image in current_images:
+                        self.conversation_history[i].append(
+                            {"type": "image", "image": image}
+                        )
+                # Add prompt for this round
+                self.conversation_history[i].append(
+                    {"type": "text", "text": prompt}
                 )
-                pos_ids = get_rope_index(
-                    self.processor,
-                    input_ids=input_ids[0],
-                    image_grid_thw=img_inputs['image_grid_thw'],
-                    attention_mask=attn_mask[0]
-                )
-            else:
-                raw = templ
-                input_ids, attn_mask = verl_F.tokenize_and_postprocess_data(
-                    prompt=templ,
-                    tokenizer=self.tokenizer,
-                    max_length=self.max_prompt_length,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    left_pad=True,
-                    truncation=self.truncation
-                )
-                pos_ids = compute_position_id_with_mask(attn_mask)
-
-            # 5) write tokens back into the i-th slot
-            new_rollings.batch['input_ids'][i]      = input_ids[0]
-            new_rollings.batch['attention_mask'][i] = attn_mask[0]
-            new_rollings.batch['position_ids'][i]   = pos_ids[0]
-            new_rollings.non_tensor_batch['raw_prompt_ids'][i] = (
-                self.tokenizer.encode(raw, add_special_tokens=False)
-            )
-
-        return new_rollings
+                
+                # Add previous round's response if it exists
+                current_round = new_round - 1  # new_round is the next round, so current_round is new_round - 1
+                if current_round > 0 and len(self.responses_history[i]) >= current_round:
+                    current_round_response = self.responses_history[i][current_round - 1]  # -1 because list is 0-indexed
+                    if current_round_response:  # Only add if response exists and is not empty
+                        self.conversation_history[i].append(
+                            {"type": "text", "text": current_round_response}
+                        )
+                
+                # Construct messages with full history
+                messages = [{"role": "user", "content": self.conversation_history[i]}]
+                
+                # Apply chat template and get model inputs
+                raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+                print("--------------------------------")
+                print(f"raw_prompt: {raw_prompt}")
+                print("--------------------------------")
+                # Get all images from history
+                all_images = [item["image"] for item in self.conversation_history[i] 
+                            if item["type"] == "image"]
+                
+                # Process through model
+                model_inputs = self.processor(text=[raw_prompt], images=all_images, return_tensors="pt")
+                
+                # Use TensorHelper to pad the tensors properly
+                padded_inputs = {}
+                for key, value in model_inputs.items():
+                    # Only pad sequence-like tensors
+                    if len(value[0].shape) > 0:
+                        # Use TensorHelper to pad the tensor
+                        padded_tensor = self.tensor_fn.pad_tensor(
+                            value[0].unsqueeze(0),  # Add batch dimension for TensorHelper
+                            pad_id=0 if key != 'input_ids' else self.tokenizer.pad_token_id
+                        )
+                        padded_inputs[key] = padded_tensor
+                    else:
+                        # For non-sequence tensors, keep as is
+                        padded_inputs[key] = value
+                
+                # Update all model inputs
+                for key, value in padded_inputs.items():
+                    if key not in updated_rollings.batch:
+                        updated_rollings.batch[key] = torch.zeros(
+                            (batch_size,) + value.shape[1:],
+                            dtype=value.dtype,
+                            device=value.device
+                        )
+                    updated_rollings.batch[key][i] = value[0]  # Take first item since padding adds batch dimension
+                
+                # Update multi_modal_data in non_tensor_batch
+                if 'multi_modal_data' not in updated_rollings.non_tensor_batch:
+                    updated_rollings.non_tensor_batch['multi_modal_data'] = [None] * batch_size
+                updated_rollings.non_tensor_batch['multi_modal_data'][i] = {"image": all_images}
+                
+                # Handle position_ids if using Qwen2VL
+                if self.processor is not None and self.processor.image_processor.__class__.__name__ == "Qwen2VLImageProcessor":
+                    from verl.models.transformers.qwen2_vl import get_rope_index
+                    
+                    position_ids = get_rope_index(
+                        self.processor,
+                        input_ids=updated_rollings.batch['input_ids'][i],
+                        image_grid_thw=model_inputs.get('image_grid_thw'),
+                        video_grid_thw=model_inputs.get('video_grid_thw'),
+                        second_per_grid_ts=None,  # We removed this earlier
+                        attention_mask=updated_rollings.batch['attention_mask'][i],
+                    )
+                    
+                    if 'position_ids' not in updated_rollings.batch:
+                        updated_rollings.batch['position_ids'] = torch.zeros(
+                            (batch_size,) + position_ids.shape[1:],
+                            dtype=position_ids.dtype,
+                            device=position_ids.device
+                        )
+                    updated_rollings.batch['position_ids'][i] = position_ids
+                else:
+                    # Use standard position IDs
+                    position_ids = compute_position_id_with_mask(updated_rollings.batch['attention_mask'][i].unsqueeze(0))[0]
+                    if 'position_ids' not in updated_rollings.batch:
+                        updated_rollings.batch['position_ids'] = torch.zeros(
+                            (batch_size,) + position_ids.shape,
+                            dtype=position_ids.dtype,
+                            device=position_ids.device
+                        )
+                    updated_rollings.batch['position_ids'][i] = position_ids
+        
+        return updated_rollings
     
     def sample_frames(self,
                       video_paths: List[str],
@@ -360,112 +512,36 @@ class LLMGenerationManager:
         return next_obs_ids
     
 
-    def _generate_with_gpu_padding(self, active_batch: DataProto) -> DataProto:
+    def _generate_with_gpu_padding(self, gen_batch: DataProto) -> DataProto:
         """
-        Wrapper for generation that handles multi-GPU padding requirements.
-        If num_gpus <= 1, return self.actor_rollout_wg.generate_sequences(active_batch)
-        If active_batch size is not divisible by num_gpus, pad with first sequence
-        then remove padding from output.
-        """
-        # Deep copy the active batch and pop the keys needed for generation.
-        gen_batch = deepcopy(active_batch)
-        gen_batch = gen_batch.pop(
-            batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-            non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
-        )
-        num_gpus = self.num_gpus
-        if num_gpus <= 1:
-            return self.actor_rollout_wg.generate_sequences(gen_batch)
+        Generate sequences with proper GPU padding handling using built-in padding functions.
         
+        Args:
+            gen_batch: Input batch data
+            
+        Returns:
+            DataProto with generated sequences
+        """
+        # Get batch size from input_ids tensor
         batch_size = gen_batch.batch['input_ids'].shape[0]
-        remainder = batch_size % num_gpus
-        if remainder == 0:
+        
+        # If single GPU or batch size is divisible by world_size, no padding needed
+        if self.num_gpus <= 1 or batch_size % self.actor_rollout_wg.world_size == 0:
             return self.actor_rollout_wg.generate_sequences(gen_batch)
+            
+        # Pad batch to be divisible by world_size
+        padded_batch, pad_size = pad_dataproto_to_divisor(gen_batch, self.actor_rollout_wg.world_size)
         
-        # Compute padding size.
-        padding_size = num_gpus - remainder
-
-        # Pad tensor fields.
-        padded_batch = {}
-        for k, v in gen_batch.batch.items():
-            pad_sequence = v[0:1].repeat(padding_size, *[1] * (len(v.shape) - 1))
-            padded_batch[k] = torch.cat([v, pad_sequence], dim=0)
-
-        # Pad non-tensor fields.
-        padded_non_tensor = {}
-        for k, v in gen_batch.non_tensor_batch.items():
-            # Ensure v is a list.
-            if isinstance(v, np.ndarray):
-                v = list(v)
-            if isinstance(v, list):
-                padded_non_tensor[k] = v + [v[0]] * padding_size
-            else:
-                raise TypeError(f"Non-tensor field {k} must be a list or numpy array.")
-        # Convert padded non-tensor fields to np.ndarray with dtype=object.
-        padded_non_tensor = {k: np.array(v, dtype=object) for k, v in padded_non_tensor.items()}
-
-        # Rebuild DataProto manually to avoid unwanted conversion.
-        padded_gen_batch = DataProto.__new__(DataProto)
-        padded_gen_batch.batch = TensorDict(
-            source=padded_batch,
-            batch_size=(padded_batch["input_ids"].shape[0],)
-        )
-        padded_gen_batch.non_tensor_batch = padded_non_tensor
-        padded_gen_batch.meta_info = gen_batch.meta_info
-        # Generate sequences with the padded batch.
-        padded_output = self.actor_rollout_wg.generate_sequences(padded_gen_batch)
-
-        # Remove padding from tensor fields for all keys.
-        trimmed_batch = {k: v[:-padding_size] for k, v in padded_output.batch.items()}
-        padded_output.batch = trimmed_batch
+        # Generate with padded batch
+        output_batch = self.actor_rollout_wg.generate_sequences(padded_batch)
         
-        # Remove padding from non-tensor fields.
-        trimmed_non_tensor = {}
-        for k, v in padded_output.non_tensor_batch.items():
-            if isinstance(v, np.ndarray):
-                trimmed_non_tensor[k] = v[:-padding_size]
-            else:
-                trimmed_non_tensor[k] = v  # Fallback if not an array.
-        padded_output.non_tensor_batch = trimmed_non_tensor
+        # Remove padding from output
+        unpadded_batch = unpad_dataproto(output_batch, pad_size=pad_size)
         
-        # Trim meta_info if needed.
-        if hasattr(padded_output, 'meta_info') and padded_output.meta_info:
-            trimmed_meta = {}
-            for k, v in padded_output.meta_info.items():
-                if isinstance(v, torch.Tensor):
-                    trimmed_meta[k] = v[:-padding_size]
-                else:
-                    trimmed_meta[k] = v
-            padded_output.meta_info = trimmed_meta
+        return unpadded_batch
 
-        return padded_output
 
-    def _postprocess_responses(self, responses: torch.Tensor) -> torch.Tensor:
-        """Process responses to remove 1. multiple answers or 2. reward hacking attempts."""
-        responses_str = self.tokenizer.batch_decode(
-            responses, 
-            skip_special_tokens=True
-        )
-        # responses_str = [resp.split('</answer>')[0] + '</answer>' 
-        #             if '</answer>' in resp else resp 
-        #             for resp in responses_str]
-        responses_str = self._process_answer_tag(responses_str)
-        
-        if self.no_think_rl:
-            # Extract only the content inside the first <answer>...</answer> tag
-            processed = []
-            for resp in responses_str:
-                match = re.search(r"<answer>(.*?)</answer>", resp)
-                if match:
-                    # Only keep the answer tag with its content
-                    processed.append(f"<answer>{match.group(1)}</answer>")
-                else:
-                    # If no answer tag is found, leave the response unchanged
-                    processed.append(resp)
-            responses_str = processed
-        responses = self._batch_tokenize(responses_str)
-        return responses, responses_str
-
+    
     def _batch_tokenize(self, responses: List[str]) -> torch.Tensor:
         """Tokenize a batch of responses."""
         return self.tokenizer(
@@ -475,131 +551,211 @@ class LLMGenerationManager:
             padding="longest"
         )['input_ids']
     
-    def correction(self, responses_str: List[str], current_frames_list: List[List[int]]) -> List[Dict]:
-        """Classify errors in responses"""
-        correction_info = []
-        for i, resp in enumerate(responses_str):
-            # Get current frame state from rollings
-            current_frames = current_frames_list[i]
-            total_frames = self.max_frames
-            
-            error_type, error_msg, _ = extract_solution(
-                resp, 
-                total_frames=total_frames,
-                current_frames=current_frames,
-                simplified=False
-            )
-            
-            # Map error types to correction messages
-            error_map = {
-                'format_error': "Response format incorrect",
-                'think_error': "Missing reasoning section",
-                'answer_error': "Missing answer tag",
-                'invalid_answer': "Invalid multiple-choice selection",
-                'frame_error': "Invalid frame operation"
-            }
-            
-            if error_type in error_map:
-                correction_info.append({
-                    'error_type': error_type,
-                    'message': f"{error_map[error_type]} - {error_msg}",
-                    'original': resp
-                })
-            else:
-                correction_info.append(None)
-            
-        return correction_info
-
-    def correction_prompt(self, correction_info: List[Dict]) -> List[str]:
-        """Generate corrective feedback prompts"""
-        prompts = []
-        template = (
-            "This is your previous response: {original}\n"
-            "It contains the following error: {message}\n"
-            "Please follow the instructions to avoid the error."
-        )
-        
-        for info in correction_info:
-            if not info:
-                prompts.append("")
-                continue
-            
-            prompts.append(template.format(
-                original=info['original'],
-                message=info['message']
-            ))
-        
-        return prompts
-
-    def _process_answer_tag(self, responses_str: List[str]):
+    def correction(self, responses_str: List[str], current_frames: List[List[float]]) -> List[Dict]:
         """
-        Process a list of response strings to keep only the first <answer></answer> tag pair
-        while preserving the rest of the string content.
+        Check responses for errors and generate correction info.
         
         Args:
-            responses_str (List[str]): List of response strings potentially containing answer tags
+            responses_str: List of response strings
+            current_frames: List of current frame timestamps
             
         Returns:
-            List[str]: Processed responses with only first answer tag pair preserved
+            List of correction dictionaries with validation results
         """
-        def process_single_response(resp):
-            # If no answer tags present, return original string
-            if '<answer>' not in resp or '</answer>' not in resp:
-                return resp
-                
-            # Find the first complete <answer> tag pair
-            pattern = r'<answer>.*?</answer>'
-            match = re.search(pattern, resp, re.DOTALL)
+        corrections = []
+        for response, frames in zip(responses_str, current_frames):
+            correction_info = {
+                "needs_correction": False,
+                "error_type": None,
+                "message": "",
+                "invalid_frames": []
+            }
             
-            if not match:
-                return resp
-                
-            # Get the matched answer tag content
-            answer_content = match.group(0)
+            try:
+                # First check for required think tag
+                think_match = re.search(r'<think>(.*?)</think>', response, re.DOTALL)
+                if not think_match:
+                    correction_info.update({
+                        "needs_correction": True,
+                        "error_type": "think_error",
+                        "message": "Missing <think> reasoning section. Please provide your reasoning."
+                    })
+                    corrections.append(correction_info)
+                    continue
+
+                # Check for frame or answer tags
+                frame_match = re.search(r'<frame>(.*?)</frame>', response, re.DOTALL)
+                answer_match = re.search(r'<answer>(.*?)</answer>', response, re.DOTALL)
+
+                if not frame_match and not answer_match:
+                    correction_info.update({
+                        "needs_correction": True,
+                        "error_type": "format_error",
+                        "message": "Missing both <frame> and <answer> tags. Please provide either frame operations or final answer."
+                    })
+                    corrections.append(correction_info)
+                    continue
+
+                # If we have an answer tag, validate it
+                if answer_match:
+                    answer_content = answer_match.group(1).strip()
+                    if not answer_content:
+                        correction_info.update({
+                            "needs_correction": True,
+                            "error_type": "answer_error",
+                            "message": "Empty answer tag. Please provide a valid answer."
+                        })
+                    elif not re.match(r'^\d+$', answer_content):
+                        correction_info.update({
+                            "needs_correction": True,
+                            "error_type": "answer_error",
+                            "message": "Answer must be a single number."
+                        })
+                    corrections.append(correction_info)
+                    continue
+
+                # If we have a frame tag, validate frame operations
+                if frame_match:
+                    frame_content = frame_match.group(1).strip()
+                    add_match = re.search(r'\+\[(.*?)\]', frame_content)
+                    remove_match = re.search(r'-\[(.*?)\]', frame_content)
+
+                    if not (add_match or remove_match):
+                        correction_info.update({
+                            "needs_correction": True,
+                            "error_type": "frame_error",
+                            "message": "Invalid frame operation format. Use +[...] to add frames and/or -[...] to remove frames."
+                        })
+                        corrections.append(correction_info)
+                        continue
+
+                    # Parse and validate frame lists
+                    added = parse_frame_list(add_match.group(1)) if add_match else []
+                    removed = parse_frame_list(remove_match.group(1)) if remove_match else []
+
+                    # Validate frame operations
+                    invalid_frames = []
+                    for frame in removed:
+                        if frame not in frames:
+                            invalid_frames.append(frame)
+
+                    if invalid_frames:
+                        correction_info.update({
+                            "needs_correction": True,
+                            "error_type": "frame_error",
+                            "message": f"Cannot remove frames that don't exist: {invalid_frames}",
+                            "invalid_frames": invalid_frames
+                        })
+                        corrections.append(correction_info)
+                        continue
+
+                    # Check for duplicate frames in additions
+                    duplicate_frames = [f for f in added if f in frames]
+                    if duplicate_frames:
+                        correction_info.update({
+                            "needs_correction": True,
+                            "error_type": "frame_error",
+                            "message": f"Cannot add frames that already exist: {duplicate_frames}",
+                            "invalid_frames": duplicate_frames
+                        })
+                        corrections.append(correction_info)
+                        continue
+
+                    # Check frame count limit
+                    new_frame_count = len(frames) - len(removed) + len(added)
+                    if new_frame_count > self.max_frames:
+                        correction_info.update({
+                            "needs_correction": True,
+                            "error_type": "frame_error",
+                            "message": f"Operation would exceed maximum allowed frames ({self.max_frames})"
+                        })
+                        corrections.append(correction_info)
+                        continue
+
+            except Exception as e:
+                correction_info.update({
+                    "needs_correction": True,
+                    "error_type": "parsing_error",
+                    "message": f"Error processing response: {str(e)}"
+                })
             
-            # Replace all subsequent answer tag pairs with their content
-            rest_of_string = resp[match.end():]
-            cleaned_rest = re.sub(r'<answer>(.*?)</answer>', r'\1', rest_of_string, flags=re.DOTALL)
+            corrections.append(correction_info)
             
-            return resp[:match.start()] + answer_content + cleaned_rest
-        
-        # Process each response string
-        return [process_single_response(resp) for resp in responses_str]
+        return corrections
 
 
     def execute_predictions(
         self,
         responses_str: List[str],
-        current_frames_list: List[List[int]],
+        current_frames: List[List[float]],
         correction_info: List[Dict]
-    ) -> Tuple[List[List[int]], List[bool]]:
+    ) -> Tuple[List[List[float]], List[bool]]:
+        """
+        Execute frame selection predictions and determine if samples are done.
+        
+        Args:
+            responses_str: List of response strings for active samples
+            current_frames: List of current frame timestamps for active samples
+            correction_info: List of correction info for active samples
+            
+        Returns:
+            Tuple of (next observations, done flags) for active samples
+        """
         next_obs = []
         dones = []
+
+        # Ensure all input lists have the same length
+        if not (len(responses_str) == len(current_frames) == len(correction_info)):
+            raise ValueError(
+                f"Mismatched lengths: responses={len(responses_str)}, "
+                f"frames={len(current_frames)}, corrections={len(correction_info)}"
+            )
         
-        for i, (resp, curr_frames) in enumerate(zip(responses_str, current_frames_list)):
-            if correction_info[i] is not None:
+        for resp, curr_frames, corr in zip(responses_str, current_frames, correction_info):
+            # If needs correction, continue with current frames
+            if corr.get("needs_correction", False):
                 next_obs.append(curr_frames)
                 dones.append(False)
                 continue
 
-            answer = extract_answer(resp)
-            if answer is None:
+            # Extract either frame operations or final answer
+            content = extract_answer(resp) if resp else None
+            if content is None:
+                # Invalid response format - needs correction
                 next_obs.append(curr_frames)
-                dones.append(True)
+                dones.append(False)
                 continue
 
-            add_match = re.search(r'\+\[(.*?)\]', answer)
-            remove_match = re.search(r'-\[(.*?)\]', answer)
-            add_frames = parse_frame_list(add_match.group(1)) if add_match else []
-            remove_frames = parse_frame_list(remove_match.group(1)) if remove_match else []
+            try:
+                # Check if it's a frame operation or final answer
+                if '<frame>' in resp:
+                    # Handle frame operations
+                    add_match = re.search(r'\+\[(.*?)\]', content)
+                    remove_match = re.search(r'-\[(.*?)\]', content)
+                    add_frames = parse_frame_list(add_match.group(1)) if add_match else []
+                    remove_frames = parse_frame_list(remove_match.group(1)) if remove_match else []
 
-            new_frames, is_done = update_frames(
-                curr_frames, add_frames, remove_frames, self.max_frames
-            )
-            next_obs.append(new_frames)
-            dones.append(is_done)
+                    new_frames, is_done = update_frames(
+                        curr_frames, add_frames, remove_frames, self.max_frames
+                    )
+                    next_obs.append(new_frames)
+                    dones.append(is_done)
+                else:
+                    # It's a final answer - we're done
+                    # Only mark as done if it's a valid answer (single number)
+                    if re.match(r'^\d+$', content.strip()):
+                        next_obs.append(curr_frames)
+                        dones.append(True)
+                    else:
+                        # Invalid answer format - needs correction
+                        next_obs.append(curr_frames)
+                        dones.append(False)
+            except Exception as e:
+                logger.warning(f"Error processing response '{content}': {str(e)}")
+                # Error in processing - needs correction
+                next_obs.append(curr_frames)
+                dones.append(False)
         
-        # **Return the list you built, not an undefined name**
         return next_obs, dones
 
 def update_frames(current_frames: List[int], add_frames: List[int], remove_frames: List[int], max_frames: int) -> Tuple[List[int], bool]:
@@ -635,13 +791,3 @@ def update_frames(current_frames: List[int], add_frames: List[int], remove_frame
     
     
     return new_frames, is_done
-
-def extract_answer(text: str) -> str:
-    """
-    Extract the content of the first <answer>...</answer> tag from the text.
-    Returns None if no answer tag is found.
-    """
-    match = re.search(r"<answer>(.*?)</answer>", text)
-    if match:
-        return match.group(1).strip()
-    return None

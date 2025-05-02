@@ -62,30 +62,30 @@ def sample_video_frames(
     width: Optional[int] = None,
     num_frames: int = 5,
     strategy: str = 'uniform',
-    ratio: float = 0.8
+    ratio: float = 1,
+    cache_dir: Optional[str] = None,
+    use_cache: bool = True
 ) -> Tuple[List[Dict[str, Any]], List[float], int]:
     """
-    Sample frames from a video using specified strategy.
+    Sample frames from a video with improved caching and error handling.
     
     Args:
-        video_path (str): Path to the video file
-        height (int, optional): Desired height of output frames
-        width (int, optional): Desired width of output frames
-        num_frames (int): Number of frames to sample
-        strategy (str): Sampling strategy ('uniform', 'random', or 'all')
-        ratio (float): Scaling factor for width and height
+        video_path: Path to the video file
+        height: Desired height of output frames
+        width: Desired width of output frames
+        num_frames: Number of frames to sample
+        strategy: Sampling strategy ('uniform', 'random', 'all')
+        ratio: Scaling factor for width and height
+        cache_dir: Directory to store cached frames
+        use_cache: Whether to use frame caching
         
     Returns:
         Tuple containing:
-            - List of frame dictionaries with 'bytes', 'width', 'height'
+            - List of frame dictionaries with 'image', 'width', 'height'
             - List of timestamps
             - Total number of 1fps frames available
-            
-    Raises:
-        FileNotFoundError: If video file doesn't exist
-        ValueError: If video is invalid or parameters are invalid
     """
-    # Validate parameters
+    # Parameter validation
     if num_frames < 1:
         raise ValueError("num_frames must be at least 1")
     if strategy not in ['uniform', 'random', 'all']:
@@ -93,17 +93,25 @@ def sample_video_frames(
     if ratio <= 0 or ratio > 1:
         raise ValueError("ratio must be between 0 and 1")
     
-    # Get video properties
-    fps, duration = validate_video_file(video_path)
-    total_frames = int(fps * duration)
+    # Get video properties with retry
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            fps, duration = validate_video_file(video_path)
+            total_frames = int(fps * duration)
+            break
+        except (ValueError, FileNotFoundError) as e:
+            if attempt == max_retries - 1:
+                raise
+            logger.warning(f"Retry {attempt + 1}/{max_retries} after error: {str(e)}")
+            continue
     
-    # Adjust dimensions
-    if width is not None:
-        width = int(ratio * width)
-    if height is not None:
-        height = int(ratio * height)
+    # Apply scaling to dimensions
+    if ratio != 1:
+        width = int(width * ratio) if width else None
+        height = int(height * ratio) if height else None
     
-    # Build candidate frames list
+    # Build frame candidates list
     candidates = []
     for sec in range(0, int(duration) + 1):
         frame_idx = int(round(sec * fps))
@@ -140,56 +148,73 @@ def sample_video_frames(
     
     try:
         for frame_idx, timestamp in sampled_candidates:
-            # Validate frame index
-            if frame_idx >= total_frames:
-                logger.warning(f"Frame index {frame_idx} exceeds total frames {total_frames} in video {video_path}")
-                continue
-                
+            # Check cache first if enabled
+            cache_key = None
+            if use_cache and cache_dir:
+                cache_key = f"{os.path.basename(video_path)}_{frame_idx}_{width}x{height}.jpg"
+                cache_path = os.path.join(cache_dir, cache_key)
+                if os.path.exists(cache_path):
+                    try:
+                        with open(cache_path, 'rb') as f:
+                            image_bytes = f.read()
+                        sampled_frames.append({
+                            'image': encode_image_to_base64(image_bytes),
+                            'width': width or 0,
+                            'height': height or 0,
+                        })
+                        sampled_times.append(timestamp)
+                        continue
+                    except Exception as e:
+                        logger.warning(f"Failed to read cached frame: {str(e)}")
+            
+            # Read frame from video
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
             
-            if not ret:
-                logger.warning(f"Failed to read frame {frame_idx} from video {video_path}. Total frames: {total_frames}, FPS: {fps}")
+            if not ret or frame is None or frame.size == 0:
+                logger.warning(f"Failed to read frame {frame_idx}")
                 continue
             
-            # Validate frame data
-            if frame is None or frame.size == 0:
-                logger.warning(f"Empty frame data for frame {frame_idx} in video {video_path}")
-                continue
-            
-            # Convert and resize frame
             try:
+                # Convert and resize frame
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 pil_img = Image.fromarray(frame_rgb)
                 
-                if width is not None or height is not None:
+                # Calculate dimensions
+                if width or height:
                     orig_width, orig_height = pil_img.size
                     if width is None:
-                        new_width = int(orig_width * (height / orig_height))
-                        new_height = height
+                        width = int(orig_width * (height / orig_height))
                     elif height is None:
-                        new_width = width
-                        new_height = int(orig_height * (width / orig_width))
-                    else:
-                        new_width, new_height = width, height
-                    pil_img = pil_img.resize((new_width, new_height))
+                        height = int(orig_height * (width / orig_width))
+                    pil_img = pil_img.resize((width, height))
                 else:
-                    new_width, new_height = pil_img.size
+                    width, height = pil_img.size
                 
                 # Convert to bytes
                 buf = BytesIO()
-                pil_img.save(buf, format='JPEG')
+                pil_img.save(buf, format='JPEG', quality=95)
                 image_bytes = buf.getvalue()
                 buf.close()
                 
+                # Cache frame if enabled
+                if use_cache and cache_dir and cache_key:
+                    os.makedirs(cache_dir, exist_ok=True)
+                    try:
+                        with open(os.path.join(cache_dir, cache_key), 'wb') as f:
+                            f.write(image_bytes)
+                    except Exception as e:
+                        logger.warning(f"Failed to cache frame: {str(e)}")
+                
                 sampled_frames.append({
-                    'bytes': image_bytes,
-                    'width': new_width,
-                    'height': new_height,
+                    'image': encode_image_to_base64(image_bytes),
+                    'width': width,
+                    'height': height,
                 })
                 sampled_times.append(timestamp)
+                
             except Exception as e:
-                logger.warning(f"Error processing frame {frame_idx} in video {video_path}: {str(e)}")
+                logger.warning(f"Error processing frame {frame_idx}: {str(e)}")
                 continue
     
     finally:
@@ -218,7 +243,7 @@ def sample_frames_from_next_obs(
         ratio (float): Scaling factor for width and height
         
     Returns:
-        List of frame dictionaries with 'bytes', 'width', 'height'
+        List of frame dictionaries with 'image' (base64 encoded), 'width', 'height'
         
     Raises:
         FileNotFoundError: If video file doesn't exist
@@ -283,14 +308,14 @@ def sample_frames_from_next_obs(
             else:
                 new_width, new_height = pil_img.size
             
-            # Convert to bytes
+            # Convert to bytes and encode to base64
             buf = BytesIO()
-            pil_img.save(buf, format='JPEG')
+            pil_img.save(buf, format='JPEG', quality=95)  # Match quality with sample_video_frames
             image_bytes = buf.getvalue()
             buf.close()
             
             sampled_frames.append({
-                'bytes': image_bytes,
+                'image': encode_image_to_base64(image_bytes),  # Use base64 encoding like sample_video_frames
                 'width': new_width,
                 'height': new_height,
             })

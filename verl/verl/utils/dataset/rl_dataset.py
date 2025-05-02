@@ -20,6 +20,7 @@ import os
 import re
 from collections import defaultdict
 from typing import List, Optional, Union
+from io import BytesIO
 
 import datasets
 import numpy as np
@@ -36,6 +37,7 @@ from verl.utils.agents.construct_prompt import generate_prompt
 
 import random
 import json
+import pandas as pd
 logger = logging.getLogger(__name__)
 
 def collate_fn(data_list: list[dict]) -> dict:
@@ -98,6 +100,8 @@ class RLHFDataset(Dataset):
         self.max_rounds = config.get("max_rounds", 5)
         self.sampling_strategy = config.get("sampling_strategy", "random")
         self.resolution = config.get("resolution", 1)
+        self.max_height = config.get("max_height", 240)
+        self.max_width = config.get("max_width", 320)
 
         # note: this video is used for frames sampling
         self.mm_key = config.get("mm_key", "frames")
@@ -119,22 +123,26 @@ class RLHFDataset(Dataset):
         
         dataframes = []
 
-        # for parquet_file in self.dataset_files:
+        # for parquet_file in self.data_files:
         #     # read parquet files and cache
         #     dataframe = pd.read_parquet(parquet_file)
         #     dataframes.append(dataframe)
         # self.dataframe = pd.concat(dataframes)
-        for dataset_file in self.dataset_files:
-            # the dataset_file is json
-            if dataset_file.endswith('.parquet'):
-                dataframe = pd.read_parquet(dataset_file)
+        for dataset in self.data_files:
+            # the dataset is json
+            if dataset.endswith('.parquet'):
+                dataframe = datasets.load_dataset("parquet", data_files=dataset)["train"]
                 dataframes.append(dataframe)
-            elif dataset_file.endswith('.json'):
-                with open(dataset_file, 'r') as f:
+            elif dataset.endswith('.json'):
+                with open(dataset, 'r') as f:
                     data = json.load(f)
                 dataframes.extend(data)
 
-        self.dataframe = pd.DataFrame(dataframes)
+        # add a new column for data_source
+        if self.data_files[0].endswith('.parquet'):
+            self.dataframe: datasets.Dataset = datasets.concatenate_datasets(dataframes)
+        else:
+            self.dataframe = dataframes
 
         print(f"dataset len: {len(self.dataframe)}")
 
@@ -158,7 +166,7 @@ class RLHFDataset(Dataset):
             self._download(use_origin_parquet=True)  # download and resume from original parquet files
             self._read_files_and_tokenize()
         else:
-            print(r"old dataloader ckpt file is used, please train from scratch for better ckpt performance")
+            print("old dataloader ckpt file is used, please train from scratch for better ckpt performance")
 
     def __len__(self):
         return len(self.dataframe)
@@ -182,12 +190,12 @@ class RLHFDataset(Dataset):
 
         return messages
 
+                        
     def __getitem__(self, item):
         """
         Note that we also return the raw_input_ids so that it can be combined with other chat template
         """
         row_dict: dict = self.dataframe[item]
-        messages = self._build_messages(row_dict)
         model_inputs = {}
 
         if self.processor is not None:
@@ -197,49 +205,130 @@ class RLHFDataset(Dataset):
 
             images = None
             if self.image_key in row_dict:
+                messages = self._build_messages(row_dict)
+                
                 images = [process_image(image) for image in row_dict.pop(self.image_key)]
                 multi_modal_data["image"] = images
-
             videos = None
             if self.video_key in row_dict:
+                messages = self._build_messages(row_dict)
+                
                 videos = [process_video(video) for video in row_dict.pop(self.video_key)]
                 multi_modal_data["video"] = [video.numpy() for video in videos]
 
-            if self.mm_key in row_dict:
+            if self.mm_key == row_dict['mm_key']:
                 video_path = row_dict['extra_info']['video_path']
                 height = row_dict['extra_info']['height']
                 width = row_dict['extra_info']['width']
-                num_frames = row_dict["extra_info"]["num_frames"]
-                sampled_frames, sampled_times, total_times = sample_video_frames(video_path, height=height, width=width, num_frames=num_frames, strategy=self.sampling_strategy, ratio=self.resolution)
+                
+                if height > self.max_height or width > self.max_width:
+                    scale = min(self.max_width / width, self.max_height / height)
+                else:
+                    scale = 1
+                    
+                sampled_frames, sampled_times, total_times = sample_video_frames(
+                    video_path, height=height, width=width, 
+                    num_frames=self.max_frames, 
+                    strategy=self.sampling_strategy, 
+                    ratio=scale
+                )
+                row_dict["extra_info"]["height"] = sampled_frames[0]['height']
+                row_dict["extra_info"]["width"] = sampled_frames[0]['width']
                 row_dict["extra_info"]["times"] = sampled_times
                 row_dict["extra_info"]["total_times"] = total_times
                 row_dict["extra_info"]["max_frames"] = self.max_frames
                 row_dict["extra_info"]["max_rounds"] = self.max_rounds
+                row_dict["extra_info"]["rewards"] = [None] * self.max_rounds
+                row_dict["extra_info"]["past_times"] = [[None] * self.max_frames for _ in range(self.max_rounds)]
+                row_dict["extra_info"]["dones"] = [False] * self.max_rounds
                 
-                multi_modal_data["image"] = sampled_frames
-                messages = generate_prompt(question=messages, 
+                question = row_dict[self.prompt_key]
+
+                row_dict["extra_info"]["question"] = question
+
+                images = [process_image({"image": frame['image']}) for frame in sampled_frames]
+                multi_modal_data["image"] = images
+                prompt = generate_prompt(question=question, 
                           timestamps=sampled_times, 
                           total_frames=total_times,
                           max_rounds=self.max_rounds, 
                           max_frames=self.max_frames)
-            raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [],
+                    }
+                ]
+                # add images to messages
+                for image in images:
+                    messages[0]["content"].append({"type": "image", "image": image})
+                messages[0]["content"].append({"type": "text", "text": prompt})
 
-            model_inputs = self.processor(text=[raw_prompt], images=images, videos=videos, return_tensors="pt")
+                # exit(0)
+                raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
-            input_ids = model_inputs.pop("input_ids")
-            attention_mask = model_inputs.pop("attention_mask")
+                model_inputs = self.processor(text=[raw_prompt], images=images, videos=videos, return_tensors="pt")
+                # =================================
+                # grab the first sequence
 
-            if "second_per_grid_ts" in model_inputs:
-                model_inputs.pop("second_per_grid_ts")
+                if random.randint(1, 36) == 1:
+                    # 2. Extract the first sequence
+                    input_ids      = model_inputs["input_ids"][0]       # Tensor of shape (seq_len,)
+                    attention_mask = model_inputs["attention_mask"][0]  # Tensor of shape (seq_len,)
 
-            # There's a trap here, multi_modal_inputs has to be a dict, not BatchFeature
-            row_dict["multi_modal_data"] = multi_modal_data
-            row_dict["multi_modal_inputs"] = dict(model_inputs)
+                    # 3. Compute total tokens
+                    total_tokens = input_ids.size(0)
 
-            # second_per_grid_ts isn't used for training, just for mrope
-            row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
+                    # 4. Resolve the image/video pad token IDs, with fallbacks
+                    tok = self.processor.tokenizer
+
+                    if hasattr(self.processor, "image_token_id"):
+                        image_token_id = self.processor.image_token_id
+                    elif hasattr(tok, "image_token_id"):
+                        image_token_id = tok.image_token_id
+                    else:
+                        image_token_id = tok.convert_tokens_to_ids(self.processor.image_token)  # <|image_pad|> :contentReference[oaicite:0]{index=0}
+
+                    if hasattr(self.processor, "video_token_id"):
+                        video_token_id = self.processor.video_token_id
+                    elif hasattr(tok, "video_token_id"):
+                        video_token_id = tok.video_token_id
+                    else:
+                        video_token_id = tok.convert_tokens_to_ids(self.processor.video_token)  # <|video_pad|> :contentReference[oaicite:1]{index=1}
+
+                    # 5. Build mask of "real" text tokens (exclude vision pads and padding)
+                    is_text = (
+                        (input_ids != image_token_id)
+                        & (input_ids != video_token_id)
+                        & attention_mask.bool()
+                    )
+
+                    # 6. Count text vs. vision tokens
+                    text_tokens   = is_text.sum().item()
+                    vision_tokens = total_tokens - text_tokens
+
+                    # 7. Print results
+                    print(f"Total tokens:  {total_tokens}")
+                    print(f"Text tokens:   {text_tokens}")
+                    print(f"Vision tokens: {vision_tokens}")
+                    print(f'height: {height}, width: {width}')
+                    # =================================
+                input_ids = model_inputs.pop("input_ids")
+                attention_mask = model_inputs.pop("attention_mask")
+
+                if "second_per_grid_ts" in model_inputs:
+                    model_inputs.pop("second_per_grid_ts")
+
+                # There's a trap here, multi_modal_inputs has to be a dict, not BatchFeature
+                row_dict["multi_modal_data"] = multi_modal_data
+                row_dict["multi_modal_inputs"] = dict(model_inputs)
+
+                # second_per_grid_ts isn't used for training, just for mrope
+                row_dict["multi_modal_inputs"].pop("second_per_grid_ts", None)
+
 
         else:
+            messages = self._build_messages(row_dict)
             raw_prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             model_inputs = self.tokenizer(raw_prompt, return_tensors="pt", add_special_tokens=False)
             input_ids = model_inputs.pop("input_ids")
@@ -253,6 +342,7 @@ class RLHFDataset(Dataset):
             left_pad=True,
             truncation=self.truncation,
         )
+
 
         if self.processor is not None and self.processor.image_processor.__class__.__name__ == "Qwen2VLImageProcessor":
             from verl.models.transformers.qwen2_vl import get_rope_index
@@ -283,9 +373,7 @@ class RLHFDataset(Dataset):
                 raw_prompt_ids = raw_prompt_ids[: self.max_prompt_length]
             elif self.truncation == "error":
                 raise RuntimeError(f"Prompt length {len(raw_prompt_ids)} is longer than {self.max_prompt_length}.")
-
-        
-
+        row_dict["raw_prompt_ids"] = raw_prompt_ids
         # encode prompts without chat template
         if self.return_raw_chat:
             row_dict["raw_prompt"] = messages

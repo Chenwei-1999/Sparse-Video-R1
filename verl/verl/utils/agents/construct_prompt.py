@@ -1,71 +1,54 @@
 import textwrap
+from typing import List, Optional, Dict, Any
 
-def generate_prompt(question, timestamps, total_frames=None, n_round=1, max_rounds=5, max_frames=5, 
-                    previous_frames=[], include_history=False):
-    """
-    Generate a prompt string based on the provided video frames, question, and round details.
 
-    Args:
-        question (str): The question to be answered.
-        timestamps (list): List of frame timestamps (in seconds).
-        n_round (int): The current round number (default is 1).
-        max_rounds (int): The total number of rounds available (default is 5).
-        max_frames (int): The maximum number of frames allowed (default is 5).
-        previous_frames (list of tuple, optional): Each tuple contains the frames selected in that round.
-    Returns:
-        str: A formatted prompt string.
+def generate_prompt(
+    question: str,
+    timestamps: List[float],
+    total_frames: Optional[int] = None,
+    n_round: int = 1,
+    max_rounds: int = 5,
+    max_frames: int = 5,
+) -> str:
     """
+    Generate a prompt string with improved structure and error handling.
     
-    def format_previous_history(previous_frames):
-        """
-        Format the history of previous rounds.
-        
-        For round 1, just show the selected frames.
-        For subsequent rounds, show the actions taken and the resulting selected frames.
-        """
-        if len(previous_frames) == 0:
-            return ""
-        
-        # For rounds 2 and onward, show the action and resulting frames.
-        else:
-            lines = ["This is the history of previous rounds:"]
-            # It is assumed that len(previous_frames) == len(previous_rounds) + 1.
-            for i in range(1, len(previous_frames)+1):
-                # add_frames, remove_frames = previous_rounds[i - 1]
-                # add_str = f"add [{', '.join(map(str, add_frames))}]" if add_frames else ""
-                # remove_str = f"remove [{', '.join(map(str, remove_frames))}]" if remove_frames else ""
-                # action_str = f"you {add_str} {remove_str}".strip()
-                # lines.append(f"Round {i + 1}: {action_str}, so the frames selected are: [{', '.join(map(str, previous_frames[i]))}]")
-                lines.append(f"Round {i}: the frames selected are: [{', '.join(map(str, previous_frames[i-1]))}]")
-        return "\n".join(lines)
-    video_info = f"sampled from total {total_frames} frames (decoded at 1 fps)" if total_frames else "frames (decoded at 1 fps)"
-    previous_history_str = format_previous_history(previous_frames)
+    Args:
+        question: The question to be answered
+        timestamps: List of frame timestamps (in seconds)
+        total_frames: Total number of frames in video (optional)
+        n_round: Current round number (default: 1)
+        max_rounds: Maximum number of rounds (default: 5)
+        max_frames: Maximum number of frames allowed (default: 5)
 
-    prompt = textwrap.dedent(f"""
+    Returns:
+        str: Formatted prompt string
+    """
+    if not timestamps:
+        raise ValueError("timestamps list cannot be empty")
+    if n_round < 1 or n_round > max_rounds:
+        raise ValueError(f"n_round must be between 1 and {max_rounds}")
+    if max_frames < 1:
+        raise ValueError("max_frames must be at least 1")
+        
+    # Format video info
+    video_info = (
+        f"sampled from total {total_frames} frames (decoded at 1 fps)"
+        if total_frames else "frames (decoded at 1 fps)"
+    )
+    
+    return textwrap.dedent(f"""
+        
         You have a video with {len(timestamps)} {video_info}.
-        The sampled frame timestamps (in seconds) are: {timestamps}
+        The sampled frame timestamps (in seconds) are: {timestamps}.
         Please answer the following question:
-
-    {question}
-
-    Notice:
-    If the available frames provide enough information, answer directly. Otherwise,
-    specify which frames (in seconds) to add or remove to ensure the total does not exceed {max_frames} frames.
-    This is round {n_round} out of {max_rounds} rounds. Please try to answer the question before the final round.
-    {previous_history_str if include_history else ""}
-    You can use the following guidelines to help you decide:
-    Formatting Guidelines:
-    - To add frames: +[frame1, frame2, ...]
-    - To remove frames: -[frame1, frame2, ...]
-    - If no changes are needed, simply provide the answer.
-    - Use <think>...</think> for reasoning and <answer>...</answer> for the final response.
-
-    Examples:
-    - <answer>0</answer> (if the current frames are sufficient and the answer is 0)
-    - <answer>1</answer> (if the current frames are sufficient and the answer is 1)
-    - <answer>chair</answer> (if the current frames are sufficient and the answer is "chair")
-    - <answer>+[3,4,10]-[2,5]</answer> (to add frames 3, 4, and 10 and remove frames 2 and 5)
-
-""").strip()
-
-    return prompt
+        
+        {question}
+        
+        Notice:
+        - If the available frames provide enough information, answer directly in <answer></answer>, for example, <answer>1</answer>.
+        - Otherwise, specify which frames to add/remove in <frames></frames>, for example, <frames>+[1, 2, 3]</frames>.
+        - This is round {n_round} of {max_rounds}. Try to answer before the final round.
+        - You are allowed to add/remove frames and made total frames up to {max_frames} frames.
+        - Use <think></think> for reasoning before you answer or add/remove frames, for example, <think>I need to add frames 1, 2, 3 to answer the question.</think>
+    """).strip()

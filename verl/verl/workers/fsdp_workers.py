@@ -162,24 +162,44 @@ class ActorRolloutRefWorker(Worker):
 
         assert role in ["actor", "ref"]
 
+        logger.info(f"[DEBUG] Starting model initialization for role {role}")
         log_gpu_memory_usage(f"Before init {role} from HF AutoModel", logger=logger)
         local_path = copy_to_local(model_path)
+        logger.info(f"[DEBUG] Copied model to local path: {local_path}")
 
         # note that we have to create model in fp32. Otherwise, the optimizer is in bf16, which is incorrect
         # TODO(zhangchi.usc1992): 1. support create from random initialized model. 2. Support init with FSDP directly
-        self.tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
-        self.processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
+        try:
+            logger.info("[DEBUG] Loading tokenizer...")
+            self.tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+            logger.info("[DEBUG] Loading processor...")
+            self.processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
+        except Exception as e:
+            logger.error(f"[DEBUG] Error loading tokenizer/processor: {str(e)}")
+            raise
 
         torch_dtype = fsdp_config.get("model_dtype", None)
         if torch_dtype is None:
             torch_dtype = torch.float32 if self._is_actor else torch.bfloat16
         else:
             torch_dtype = PrecisionType.to_dtype(torch_dtype)
+        logger.info(f"[DEBUG] Using torch_dtype: {torch_dtype}")
 
-        # override model kwargs
-        actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code)
+        try:
+            logger.info("[DEBUG] Loading model config...")
+            actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code)
+            logger.info(f"[DEBUG] Model config loaded: {type(actor_model_config)}")
+        except Exception as e:
+            logger.error(f"[DEBUG] Error loading model config: {str(e)}")
+            raise
 
-        self.generation_config = get_generation_config(local_path, trust_remote_code=trust_remote_code)
+        try:
+            logger.info("[DEBUG] Loading generation config...")
+            self.generation_config = get_generation_config(local_path, trust_remote_code=trust_remote_code)
+            logger.info("[DEBUG] Generation config loaded")
+        except Exception as e:
+            logger.error(f"[DEBUG] Error loading generation config: {str(e)}")
+            raise
 
         override_config_kwargs = {
             "bos_token_id": self.tokenizer.bos_token_id,

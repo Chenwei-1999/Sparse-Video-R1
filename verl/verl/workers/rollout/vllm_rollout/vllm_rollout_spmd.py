@@ -39,6 +39,7 @@ from tensordict import TensorDict
 from vllm import LLM, SamplingParams
 from vllm.distributed import parallel_state as vllm_ps
 from vllm.worker.worker_base import WorkerWrapperBase
+from vllm.sampling_params import GuidedDecodingParams
 
 from verl import DataProto
 from verl.third_party.vllm import vllm_version
@@ -107,7 +108,6 @@ class vLLMRollout(BaseRollout):
             else:
                 vllm_ps.initialize_model_parallel(tensor_model_parallel_size=tensor_parallel_size)
 
-<<<<<<< Updated upstream
         assert model_hf_config.max_position_embeddings >= config.prompt_length + config.response_length, "model context length should be greater than total sequence length"
 
         max_model_len = int(config.max_model_len or config.prompt_length + config.response_length)
@@ -146,51 +146,6 @@ class vLLMRollout(BaseRollout):
             trust_remote_code=trust_remote_code,
             seed=config.get("seed", 0),
         )
-=======
-        
-
-        max_model_len = self.config.max_model_len if self.config.max_model_len \
-                        else config.prompt_length + config.response_length
-        max_model_len = int(max_model_len)  
-        if self.config.prompt_length == -1:
-
-            self.inference_engine = LLM(
-                model=model_path,
-                enable_sleep_mode=True,
-                tensor_parallel_size=tensor_parallel_size,
-                distributed_executor_backend="external_launcher",
-                dtype=config.dtype,
-                enforce_eager=config.enforce_eager,
-                gpu_memory_utilization=config.gpu_memory_utilization,
-                disable_custom_all_reduce=True,
-                skip_tokenizer_init=False,
-                disable_log_stats=config.disable_log_stats,
-                enable_chunked_prefill=config.enable_chunked_prefill,
-                enable_prefix_caching=True,
-                limit_mm_per_prompt=config.limit_mm_per_prompt,
-            )
-        else:
-            if max_num_batched_tokens < max_model_len and self.config.enable_chunked_prefill:
-                raise ValueError('Enable chunked prefill, max_num_batched_tokens is smaller than max_model_len, \
-                                please increase max_num_batched_tokens or disable chunked prefill')
-            self.inference_engine = LLM(
-                model=model_path,
-                enable_sleep_mode=True,
-                tensor_parallel_size=tensor_parallel_size,
-                distributed_executor_backend="external_launcher",
-                dtype=config.dtype,
-                enforce_eager=config.enforce_eager,
-                gpu_memory_utilization=config.gpu_memory_utilization,
-                disable_custom_all_reduce=True,
-                skip_tokenizer_init=False,
-                max_model_len=max_model_len,
-                disable_log_stats=config.disable_log_stats,
-                max_num_batched_tokens=max_num_batched_tokens,
-                enable_chunked_prefill=config.enable_chunked_prefill,
-                enable_prefix_caching=True,
-                limit_mm_per_prompt=config.limit_mm_per_prompt,
-            )
->>>>>>> Stashed changes
 
         # Offload vllm model to reduce peak memory usage
         self.inference_engine.sleep(level=1)
@@ -209,9 +164,17 @@ class vLLMRollout(BaseRollout):
         for k in config.keys():
             if hasattr(SamplingParams(), str(k)):
                 kwargs[k] = config.get(k)
+        self.regex_pattern = config.get("regex_pattern", None)
+        
+        if self.regex_pattern:
+            pattern = r"<think>.*?</think>(<frame>\+\[\d+(,\d+)*\]|\-\[\d+(,\d+)*\]</frame>|<answer>\d+</answer>)"
+            kwargs["guided_decoding"] = GuidedDecodingParams(
+                regex=pattern
+            )
 
         print(f"kwargs: {kwargs}")
         self.sampling_params = SamplingParams(**kwargs)
+ 
 
         self.pad_token_id = tokenizer.pad_token_id
 

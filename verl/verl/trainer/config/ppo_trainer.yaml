@@ -2,7 +2,7 @@ data:
   tokenizer: null
   train_files: ~/data/rlhf/gsm8k/train.parquet
   val_files: ~/data/rlhf/gsm8k/test.parquet
-  prompt_key: problem
+  prompt_key: prompt
   max_frames: 5
   max_rounds: 5
   sampling_strategy: uniform
@@ -19,7 +19,7 @@ data:
   filter_overlong_prompts: False # for large-scale dataset, filtering overlong prompts could be timeconsuming. You cat set the filter_overlong_prompts_workers to use multiprocessing to speed up.
   filter_overlong_prompts_workers: 1
   truncation: error
-  mm_key: video
+  mm_key: frames
   video_key: videos
   custom_cls:
       path: null
@@ -94,6 +94,7 @@ actor_rollout_ref:
     temperature: 1.0
     top_k: -1 # 0 for hf rollout, -1 for vllm rollout
     top_p: 1
+    regex_pattern: null
     use_fire_sampling: False # https://arxiv.org/abs/2410.21236
     prompt_length: ${data.max_prompt_length}  # not use for opensource
     response_length: ${data.max_response_length}
@@ -108,7 +109,7 @@ actor_rollout_ref:
     max_num_batched_tokens: 16384
     max_model_len: null
     max_num_seqs: 1024
-    limit_mm_per_prompt: {"image": 10}
+    limit_images: 5
     log_prob_micro_batch_size: null # will be deprecated, use log_prob_micro_batch_size_per_gpu
     log_prob_micro_batch_size_per_gpu: null
     log_prob_use_dynamic_bsz: ${actor_rollout_ref.actor.use_dynamic_bsz}
@@ -198,7 +199,7 @@ reward_model:
   launch_reward_fn_async: False # custom reward function executed async on CPU, during log_prob
 
 custom_reward_function:
-  path: verl/verl/utils/agents/reward_function.py
+  path: null
   name: compute_score
 
 algorithm:
