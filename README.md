@@ -17,7 +17,7 @@ Inspired by R1-style fine-tuning for LLMs, we introduce a **multi-round dialogue
 
 This self-curated framing leads to sharper grounding, lower latency, and better accuracy on video QA benchmarks.
 
-![Real-world Example](public/sample.png)
+![Real-world Example](public/example.png)
 
 *Figure 2: A concrete example of Sparse-Video-R1 in action.*
 
