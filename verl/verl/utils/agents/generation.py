@@ -252,8 +252,6 @@ class LLMGenerationManager:
             all_images = [item["image"] for item in self.conversation_history[orig_idx] if item.get("type") == "image"]
             num_images = len(all_images)
             # Count placeholders in raw_prompt (vision_start token)
-            placeholder_token = '<|vision_start|>'
-            num_placeholders = raw_prompt.count(placeholder_token)
             if random.randint(0, 100) == 64:
                 print('============================================')
                 print("[Chat History]")
@@ -278,8 +276,8 @@ class LLMGenerationManager:
                 truncation=self.truncation,
             )
             
-            rollings.batch['input_ids'][orig_idx] = input_ids
-            rollings.batch['attention_mask'][orig_idx] = attention_mask
+            rollings.batch['input_ids'][orig_idx] = input_ids[0]
+            rollings.batch['attention_mask'][orig_idx] = attention_mask[0]
 
             rollings.non_tensor_batch['multi_modal_data'][orig_idx] = {"image": all_images}
             rollings.non_tensor_batch['multi_modal_inputs'][orig_idx] = dict(model_inputs)
@@ -287,23 +285,27 @@ class LLMGenerationManager:
 
             
             # Handle position_ids if using Qwen2VL
+            print(self.processor)
+            print(self.processor.image_processor.__class__.__name__)
             if self.processor is not None and self.processor.image_processor.__class__.__name__ == "Qwen2VLImageProcessor":
                 from verl.models.transformers.qwen2_vl import get_rope_index
                 
-                position_ids = get_rope_index(
-                    self.processor,
-                    input_ids=rollings.batch['input_ids'][orig_idx],
-                    image_grid_thw=model_inputs.get('image_grid_thw'),
-                    video_grid_thw=model_inputs.get('video_grid_thw'),
-                    second_per_grid_ts=None,  # We removed this earlier
-                    attention_mask=rollings.batch['attention_mask'][orig_idx],
-                )
+                position_ids = [
+                    get_rope_index(
+                        self.processor,
+                        input_ids=input_ids[0],
+                        image_grid_thw=model_inputs.get("image_grid_thw"),
+                        video_grid_thw=model_inputs.get("video_grid_thw"),
+                        second_per_grid_ts=model_inputs.get("second_per_grid_ts"),
+                        attention_mask=attention_mask[0],
+                    )
+                ] 
 
             else:
                 # Use standard position IDs
-                position_ids = compute_position_id_with_mask(rollings.batch['attention_mask'][orig_idx].unsqueeze(0))[0]
+                position_ids = compute_position_id_with_mask(attention_mask)
      
-            rollings.batch['position_ids'][orig_idx] = position_ids
+            rollings.batch['position_ids'][orig_idx] = position_ids[0]
         
         return rollings
     
@@ -368,7 +370,6 @@ class LLMGenerationManager:
             DataProto with generated sequences
         """
         # Get batch size from input_ids tensor
-        batch_size = gen_batch.batch['input_ids'].shape[0]
 
         # Pad batch to be divisible by world_size
         padded_batch, pad_size = pad_dataproto_to_divisor(gen_batch, self.actor_rollout_wg.world_size)

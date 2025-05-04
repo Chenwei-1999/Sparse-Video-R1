@@ -62,18 +62,18 @@ def extract_solution(
 
     if only_answer:
         if not answer_match:
-            return 'format_error', 'Missing <answer> tag.'
+            return 'format_error', 'Missing incomplete <answer> tag.'
         return _validate_answer(answer_match.group(1))
 
     errors = []
     if not think_match:
-        errors.append('Missing <think> reasoning.')
+        errors.append('Missing <think> reasoning or incomplete <think> tag.')
 
     if answer_match:
         return _validate_answer(answer_match.group(1))
 
     if not frame_match:
-        errors.append('Neither <frames> nor <answer> provided.')
+        errors.append('Neither <frames> nor <answer> provided, or incomplete <frames> tag.')
         return 'format_error', '\n'.join(errors)
 
     return _validate_frame_ops(frame_match.group(1))
@@ -148,15 +148,17 @@ def compute_score(
     final_score = 0.5 * jaccard_score + 0.5 * correct_score
     # Add debug logging occasionally
     if random.randint(1, 64) == 1:
-        debug_info = {
-            'Current Frames': sorted(list(current_times)),
-            'Ground Truth Frames': sorted(list(ground_truth_times)),
-            'Jaccard Score': f"{jaccard_score:.4f}",
-            'Correct Score': f"{correct_score:.4f}",
-            'Final Score': f"{final_score:.4f}",
-            'past_times': extra_info['past_times'],
-        }
-        logger.info("Score Computation Debug Info:\n" + 
-                   "\n".join(f"{k}: {v}" for k, v in debug_info.items()))
+        print("--------------------------------")
+        print(f"Current Frames: {sorted(list(current_times))}")
+        print(f"Ground Truth Frames: {sorted(list(ground_truth_times))}")
+        print(f"Jaccard Score: {jaccard_score:.4f}")
+        print(f"Correct Score: {correct_score:.4f}")
+        print(f"Final Score: {final_score:.4f}")
+        print(f"Past Times: {extra_info['past_times']}")
+        print(f"Solution String: {solution_str}")
+        print(f"Ground Truth: {ground_truth}")
+        print(f"Status: {status}")
+        print(f"Answer: {answer}")
+        print("--------------------------------")
 
     return final_score

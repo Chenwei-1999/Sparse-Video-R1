@@ -88,16 +88,16 @@ class NaiveRewardManager:
             if data_source not in already_print_data_sources:
                 already_print_data_sources[data_source] = 0
 
-            if already_print_data_sources[data_source] < self.num_examine:
-                already_print_data_sources[data_source] += 1
-                print("[prompt]", prompt_str)
-                print("[response]", response_str)
-                print("[ground_truth]", ground_truth)
-                if isinstance(score, dict):
-                    for key, value in score.items():
-                        print(f"[{key}]", value)
-                else:
-                    print("[score]", score)
+            # if already_print_data_sources[data_source] < self.num_examine:
+            #     already_print_data_sources[data_source] += 1
+            #     print("[prompt]", prompt_str)
+            #     print("[response]", response_str)
+            #     print("[ground_truth]", ground_truth)
+            #     if isinstance(score, dict):
+            #         for key, value in score.items():
+            #             print(f"[{key}]", value)
+            #     else:
+            #         print("[score]", score)
 
         if return_dict:
             return {

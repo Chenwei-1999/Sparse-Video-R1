@@ -240,6 +240,7 @@ class RLHFDataset(Dataset):
                 row_dict["extra_info"]["max_rounds"] = self.max_rounds
                 row_dict["extra_info"]["rewards"] = [None] * self.max_rounds
                 row_dict["extra_info"]["past_times"] = [[None] * self.max_frames for _ in range(self.max_rounds)]
+                row_dict["extra_info"]["past_times"][0] = sampled_times
                 row_dict["extra_info"]["dones"] = [False] * self.max_rounds
                 row_dict["extra_info"]["times_GT"] = convert_timestamps_to_set(discretize_time_intervals(row_dict["extra_info"]["times_GT"]))
                 question = row_dict[self.prompt_key]
