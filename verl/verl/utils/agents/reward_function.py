@@ -9,98 +9,75 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def parse_frame_list(frame_str: str) -> List[int]:
-    """
-    Parse a comma-separated string of frame numbers into a list of integers.
-    
-    Args:
-        frame_str (str): Comma-separated string of frame numbers
-        
-    Returns:
-        List[int]: List of parsed frame numbers, empty list if invalid
-    """
-    if not frame_str:
-        return []
-    try:
-        return [int(f.strip()) for f in frame_str.split(',') if f.strip().isdigit()]
-    except ValueError:
-        logger.warning(f"Failed to parse frame list: {frame_str}")
-        return []
+# Helper for parsing frame lists
+def parse_frame_list(s: str) -> List[str]:
+    return [item.strip() for item in s.split(',') if item.strip()]
 
-def extract_solution(solution_str: str, total_frames: int, current_frames: List[int], simplified: bool = False) -> Tuple[str, Union[int, Dict[str, list]]]:
-    """
-    Extract solution from response with enhanced error detection
-    """
-    # Tag validation
-    think_match = re.search(r'<think>(.*?)</think>', solution_str, re.DOTALL)
-    frame_match = re.search(r'<frame>(.*?)</frame>', solution_str, re.DOTALL)
-    answer_match = re.search(r'<answer>(.*?)</answer>', solution_str, re.DOTALL)
-    
-    # Error type matrix
+# Refactored extract_solution function
+def extract_solution(
+    solution_str: str,
+    current_frames: List[int] = None,
+    max_frames: int = None,
+    total_times: int = None,
+    only_answer: bool = False
+) -> Tuple[str, Union[str, dict]]:
+    def _validate_answer(text: str) -> Tuple[str, str]:
+        txt = text.strip()
+        if not re.fullmatch(r"\d+", txt):
+            return 'format_error', 'Answer must be a single number.'
+        return 'valid_answer', txt
+
+    def _validate_frame_ops(frame_text: str) -> Tuple[str, Union[dict, str]]:
+        add_match = re.search(r"\+\[\s*(.*?)\s*\]", frame_text)
+        remove_match = re.search(r"-\[\s*(.*?)\s*\]", frame_text)
+        if not (add_match or remove_match):
+            return 'format_error', 'Missing both add and remove operations.'
+
+        added = parse_frame_list(add_match.group(1)) if add_match else []
+        removed = parse_frame_list(remove_match.group(1)) if remove_match else []
+
+        if any(not item.isdigit() for item in added + removed):
+            return 'format_error', 'Frame indices must be digits.'
+        added = [int(x) for x in added]
+        removed = [int(x) for x in removed]
+
+        if current_frames is not None and any(f not in current_frames for f in removed):
+            return 'frame_error', 'Attempt to remove non-existent frames.'
+        if total_times is not None and any(f < 0 or f > total_times for f in added):
+            return 'frame_error', 'Attempt to add non-existent frames.'
+        if current_frames is not None and any(f in current_frames for f in added):
+            return 'frame_error', 'Duplicate frame addition.'
+
+        new_count = (len(current_frames or []) - len(removed) + len(added))
+        if max_frames is not None and new_count > max_frames:
+            return 'frame_error', 'Exceeds maximum allowed frames.'
+        if new_count < 1:
+            return 'frame_error', 'Not enough frames left after operations.'
+
+        return 'valid_frame_ops', {'add': added, 'remove': removed}
+
+    think_match = re.search(r"<think>(.*?)</think>", solution_str, re.DOTALL)
+    frame_match = re.search(r"<frames>(.*?)</frames>", solution_str, re.DOTALL)
+    answer_match = re.search(r"<answer>(.*?)</answer>", solution_str, re.DOTALL)
+
+    if only_answer:
+        if not answer_match:
+            return 'format_error', 'Missing <answer> tag.'
+        return _validate_answer(answer_match.group(1))
+
+    errors = []
     if not think_match:
-        return ('think_error', 'Missing <think> reasoning section', solution_str)
-    if not frame_match and not answer_match:
-        return ('format_error', 'Missing both <frame> and <answer> tags', solution_str)
-        
-    # If we have an answer tag, validate it
-    if answer_match:
-        answer_content = answer_match.group(1).strip()
-        if not re.match(r'^\d+$', answer_content):
-            return ('format_error', 'Answer must be a single number', solution_str)
-        return ('valid', answer_content, solution_str)
-        
-    # If we have a frame tag, validate frame operations
-    frame_content = frame_match.group(1).strip()
-    add_match = re.search(r'\+\[(.*?)\]', frame_content)
-    remove_match = re.search(r'-\[(.*?)\]', frame_content)
-    
-    if not (add_match or remove_match):
-        return ('frame_error', 'Invalid frame operation format', solution_str)
-        
-    # Frame error cases
-    added = parse_frame_list(add_match.group(1)) if add_match else []
-    removed = parse_frame_list(remove_match.group(1)) if remove_match else []
-    
-    # Validate frame operations
-    if any(f not in current_frames for f in removed):
-        return ('frame_error', 'Trying to remove non-existent frames', solution_str)
-    if len(current_frames) - len(removed) + len(added) > total_frames:
-        return ('frame_error', 'Exceeds maximum allowed frames', solution_str)
-    if any(f in current_frames for f in added):
-        return ('frame_error', 'Adding duplicate frames', solution_str)
-        
-    return ('valid', {'add': added, 'remove': removed}, solution_str)
+        errors.append('Missing <think> reasoning.')
 
-def extract_answer(text: str) -> Optional[str]:
-    """
-    Extract either frame operations or final answer from the response.
-    
-    Args:
-        text (str): Input text containing frame or answer tags
-        
-    Returns:
-        Optional[str]: Extracted frame operations or answer text, or None if invalid
-    """
-    if not text:
-        return None
-        
-    # First check for frame operations
-    frame_match = re.search(r'<frame>(.*?)</frame>', text, re.DOTALL)
-    if frame_match:
-        frame_content = frame_match.group(1).strip()
-        if not frame_content:
-            return None
-        return frame_content
-        
-    # Then check for final answer
-    answer_match = re.search(r'<answer>(.*?)</answer>', text, re.DOTALL)
     if answer_match:
-        answer_content = answer_match.group(1).strip()
-        if not answer_content:
-            return None
-        return answer_content
-        
-    return None
+        return _validate_answer(answer_match.group(1))
+
+    if not frame_match:
+        errors.append('Neither <frames> nor <answer> provided.')
+        return 'format_error', '\n'.join(errors)
+
+    return _validate_frame_ops(frame_match.group(1))
+
 
 def discretize_time_intervals(intervals: List[List[float]]) -> Set[float]:
     """
@@ -128,7 +105,7 @@ def convert_timestamps_to_set(timestamps: Union[List[float], np.ndarray]) -> Set
 def calculate_jaccard_similarity(set1: Set[float], set2: Set[float]) -> float:
     """Calculate Jaccard similarity between two sets."""
     if not set1 and not set2:  # Both empty
-        return 1.0
+        return 0.0
     if not set1 or not set2:  # One is empty
         return 0.0
     intersection = len(set1.intersection(set2))
@@ -138,7 +115,7 @@ def calculate_jaccard_similarity(set1: Set[float], set2: Set[float]) -> float:
 def compute_score(
     data_source: str,
     solution_str: str,
-    ground_truth: Any,
+    ground_truth: str,
     extra_info: Optional[Dict[str, Any]] = None,
     status: str = 'running'
 ) -> float:
@@ -154,57 +131,32 @@ def compute_score(
     Returns:
         float: Jaccard similarity score between 0 and 1
     """
-    if extra_info is None:
-        extra_info = {}
+    current_times = extra_info['times']
+    ground_truth_times = extra_info['times_GT']
+    current_times = convert_timestamps_to_set(current_times)
+    ground_truth_times = convert_timestamps_to_set(ground_truth_times)
+    jaccard_score = calculate_jaccard_similarity(current_times, ground_truth_times)
     
-    # Validate required fields
-    required_fields = {
-        'times': 'Current frame times',
-        'max_frames': 'Maximum allowed frames',
-    }
-    
-    missing_fields = []
-    for field, desc in required_fields.items():
-        if field not in extra_info:
-            missing_fields.append(f"{field} ({desc})")
-    
-    if missing_fields:
-        raise ValueError(f"Missing required fields in extra_info: {', '.join(missing_fields)}")
 
-    # Get current frame selection
-    current_frames = set(extra_info['times'])
-    if not current_frames:
-        logger.warning("Empty current frame selection")
-        return 0.0
-
-    # Convert ground truth to set of frames
-    if isinstance(ground_truth, (list, np.ndarray)):
-        ground_truth_frames = set(float(t) for t in ground_truth)
+    status, answer = extract_solution(solution_str, only_answer=True)
+    correct_score = 0.0
+    if status == 'valid_answer':
+        correct_score = 1.0 if answer == ground_truth else 0.0
     else:
-        logger.warning(f"Invalid ground truth format: {type(ground_truth)}")
         return 0.0
-
-    # Calculate Jaccard similarity
-    if not ground_truth_frames:  # Empty ground truth
-        return 0.0
-        
-    # Calculate intersection and union
-    intersection = len(current_frames.intersection(ground_truth_frames))
-    union = len(current_frames.union(ground_truth_frames))
     
-    # Compute Jaccard similarity
-    jaccard_score = intersection / union if union > 0 else 0.0
-    
+    final_score = 0.5 * jaccard_score + 0.5 * correct_score
     # Add debug logging occasionally
     if random.randint(1, 64) == 1:
         debug_info = {
-            'Current Frames': sorted(list(current_frames)),
-            'Ground Truth Frames': sorted(list(ground_truth_frames)),
-            'Intersection Size': intersection,
-            'Union Size': union,
+            'Current Frames': sorted(list(current_times)),
+            'Ground Truth Frames': sorted(list(ground_truth_times)),
             'Jaccard Score': f"{jaccard_score:.4f}",
+            'Correct Score': f"{correct_score:.4f}",
+            'Final Score': f"{final_score:.4f}",
+            'past_times': extra_info['past_times'],
         }
         logger.info("Score Computation Debug Info:\n" + 
                    "\n".join(f"{k}: {v}" for k, v in debug_info.items()))
 
-    return jaccard_score
+    return final_score

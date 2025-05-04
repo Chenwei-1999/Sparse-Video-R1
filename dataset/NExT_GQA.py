@@ -87,9 +87,9 @@ def create_data(QA_data, vid_to_vidor, video_directory, mode='train', sample_siz
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="train", choices=["train", "test"])
-    parser.add_argument("--output_dir", type=str, default="/shares/hlw3876/chenwei/VLM-R1")
-    parser.add_argument("--video_directory", type=str, default='/shares/hlw3876/chenwei/NExT-QA')
-    parser.add_argument("--parent_directory", type=str, default='/shares/hlw3876/chenwei/NExT-GQA/nextgqa')
+    parser.add_argument("--output_dir", type=str, default="/home/zye52/scr4_hlee283/zye52/VLM-R1")
+    parser.add_argument("--video_directory", type=str, default='/home/zye52/scr4_hlee283/zye52/NExT-QA')
+    parser.add_argument("--parent_directory", type=str, default='/home/zye52/scr4_hlee283/zye52/nextgqa')
     parser.add_argument("--n", type=int, default=None)
     args = parser.parse_args()
     with open(os.path.join(args.parent_directory, "map_vid_vidorID.json"), "r") as f:

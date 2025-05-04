@@ -167,7 +167,7 @@ class vLLMRollout(BaseRollout):
         self.regex_pattern = config.get("regex_pattern", None)
         
         if self.regex_pattern:
-            pattern = r"<think>.*?</think>(<frame>\+\[\d+(,\d+)*\]|\-\[\d+(,\d+)*\]</frame>|<answer>\d+</answer>)"
+            pattern = r"<think>.*?</think>(<frames>\+\[\d+(,\d+)*\]|\-\[\d+(,\d+)*\]</frames>|<answer>\d+</answer>)"
             kwargs["guided_decoding"] = GuidedDecodingParams(
                 regex=pattern
             )

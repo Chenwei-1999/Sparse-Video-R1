@@ -65,7 +65,7 @@ def sample_video_frames(
     ratio: float = 1,
     cache_dir: Optional[str] = None,
     use_cache: bool = True
-) -> Tuple[List[Dict[str, Any]], List[float], int]:
+) -> Tuple[List[Dict[str, Any]], List[int], int]:
     """
     Sample frames from a video with improved caching and error handling.
     
@@ -116,7 +116,7 @@ def sample_video_frames(
     for sec in range(0, int(duration) + 1):
         frame_idx = int(round(sec * fps))
         if frame_idx < total_frames:
-            candidates.append((frame_idx, float(sec)))
+            candidates.append((frame_idx, int(sec)))
     
     total_1fps_frames = len(candidates)
     if not candidates:
@@ -135,7 +135,7 @@ def sample_video_frames(
         if num_frames >= total_1fps_frames:
             sampled_candidates = candidates
         else:
-            step = total_1fps_frames / float(num_frames)
+            step = total_1fps_frames / num_frames
             sampled_candidates = [
                 candidates[min(int(i * step), total_1fps_frames - 1)]
                 for i in range(num_frames)
@@ -227,7 +227,7 @@ def sample_video_frames(
 
 def sample_frames_from_next_obs(
     video_path: str,
-    timestamps: List[float],
+    timestamps: List[int],
     height: Optional[int] = None,
     width: Optional[int] = None,
     ratio: float = 1.0

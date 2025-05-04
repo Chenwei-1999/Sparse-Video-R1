@@ -935,14 +935,23 @@ class RayPPOTrainer:
             num_gpus=self.config.trainer.n_gpus_per_node,
             no_think_rl=True,
         )
-        generation_manager = LLMGenerationManager(
-            tokenizer=self.tokenizer,
-            processor= self.processor,
-            actor_rollout_wg=self.actor_rollout_wg,
-            config=gen_config,
-            logger = self.logger,
-            ratio=self.config.data.get('ratio', 1.0),
-        )
+        if not self.async_rollout_mode:
+            generation_manager = LLMGenerationManager(
+                tokenizer=self.tokenizer,
+                processor= self.processor,
+                actor_rollout_wg=self.actor_rollout_wg,
+                config=gen_config,
+                logger = self.logger,
+                ratio=self.config.data.get('ratio', 1.0),
+            )
+        else:
+            generation_manager = LLMGenerationManager(
+                tokenizer=self.tokenizer,
+                processor= self.processor,
+                actor_rollout_wg=self.async_rollout_manager,
+                config=gen_config,
+                logger = self.logger,
+            )
         # load checkpoint before doing anything
         self._load_checkpoint()
         # perform validation before training
@@ -971,7 +980,7 @@ class RayPPOTrainer:
                 batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
                 non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
                 if "multi_modal_inputs" in batch.non_tensor_batch:
-                    non_tensor_batch_keys_to_pop.extend(["multi_modal_data", "multi_modal_inputs"])
+                    non_tensor_batch_keys_to_pop.extend(["multi_modal_data", "multi_modal_inputs", "extra_info"])
                 if "raw_prompt" in batch.non_tensor_batch:
                     non_tensor_batch_keys_to_pop.append("raw_prompt")
                 if "tools_kwargs" in batch.non_tensor_batch:
@@ -987,17 +996,17 @@ class RayPPOTrainer:
                     # generate a batch
                     with _timer("gen", timing_raw):
                         if not self.async_rollout_mode:
-                            gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                            gen_batch_output = generation_manager.run_llm_loop(gen_batch)
                         else:
                             self.async_rollout_manager.wake_up()
-                            gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch)
+                            gen_batch_output = generation_manager.run_llm_loop(gen_batch)
                             self.async_rollout_manager.sleep()
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer("gen_max", timing_raw):
                             gen_baseline_batch = deepcopy(gen_batch)
                             gen_baseline_batch.meta_info["do_sample"] = False
-                            gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
+                            gen_baseline_output = self.generation_manager.run_llm_loop(gen_baseline_batch)
 
                             batch = batch.union(gen_baseline_output)
                             reward_baseline_tensor = self.reward_fn(batch)

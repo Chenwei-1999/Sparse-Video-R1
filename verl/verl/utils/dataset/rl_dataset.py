@@ -34,7 +34,7 @@ from verl.utils.model import compute_position_id_with_mask
 
 from verl.utils.agents.frames_sampler import sample_video_frames
 from verl.utils.agents.construct_prompt import generate_prompt
-
+from verl.utils.agents.reward_function import discretize_time_intervals, convert_timestamps_to_set
 import random
 import json
 import pandas as pd
@@ -241,7 +241,7 @@ class RLHFDataset(Dataset):
                 row_dict["extra_info"]["rewards"] = [None] * self.max_rounds
                 row_dict["extra_info"]["past_times"] = [[None] * self.max_frames for _ in range(self.max_rounds)]
                 row_dict["extra_info"]["dones"] = [False] * self.max_rounds
-                
+                row_dict["extra_info"]["times_GT"] = convert_timestamps_to_set(discretize_time_intervals(row_dict["extra_info"]["times_GT"]))
                 question = row_dict[self.prompt_key]
 
                 row_dict["extra_info"]["question"] = question
@@ -250,9 +250,12 @@ class RLHFDataset(Dataset):
                 multi_modal_data["image"] = images
                 prompt = generate_prompt(question=question, 
                           timestamps=sampled_times, 
-                          total_frames=total_times,
+                          total_times=total_times,
                           max_rounds=self.max_rounds, 
                           max_frames=self.max_frames)
+                
+                row_dict["extra_info"]["prompt"] = prompt
+
                 messages = [
                     {
                         "role": "user",

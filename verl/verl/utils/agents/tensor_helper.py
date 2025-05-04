@@ -83,7 +83,35 @@ class TensorHelper:
         mask = tensor != self.config.pad_token_id if pad_to_left else tensor == self.config.pad_token_id
         sorted_indices = mask.to(torch.int64).argsort(dim=1, stable=stable)
         return tensor.gather(1, sorted_indices), sorted_indices
+    
+    def pad_tensor(
+        self,
+        tensor: torch.Tensor,
+        pad_id: int = None,
+        max_length: int = None,
+        pad_left: bool = True
+    ) -> torch.Tensor:
+        """
+        Pad a tensor to the specified max_length with pad_id.
+        If max_length is None, use self.config.max_prompt_length.
+        """
+        if pad_id is None:
+            pad_id = self.config.pad_token_id
+        if max_length is None:
+            max_length = self.config.max_prompt_length
 
+        seq_len = tensor.shape[1]
+        if seq_len >= max_length:
+            return tensor[:, -max_length:] if pad_left else tensor[:, :max_length]
+
+        pad_size = max_length - seq_len
+        pad_shape = (tensor.shape[0], pad_size)
+        pad_tensor = torch.full(pad_shape, pad_id, dtype=tensor.dtype, device=tensor.device)
+        if pad_left:
+            return torch.cat([pad_tensor, tensor], dim=1)
+        else:
+            return torch.cat([tensor, pad_tensor], dim=1)
+        
     def create_attention_mask(
         self,
         input_ids: torch.Tensor,

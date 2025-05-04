@@ -1,14 +1,14 @@
 #!/bin/bash
 set -x
 export HYDRA_FULL_ERROR=1
-export HF_HOME=/shares/hlw3876/chenwei
+export HF_HOME=/home/zye52/scr4_hlee283/zye52
 export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
-export DATA_DIR=/shares/hlw3876/chenwei/VLM-R1
+export DATA_DIR=/home/zye52/scr4_hlee283/zye52/VLM-R1
 export EXPERIMENT_NAME=qwen2.5-3b-uniform
 export SAMPLING_STRATEGY=uniform #choose from "all", "random", "uniform"
 export REWARD_PATH=verl/verl/utils/agents/reward_function.py
-
+export LIMIT_IMAGES=25 # should be max turns * max frames
 ENGINE=${1:-vllm}
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -45,7 +45,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.n_agent=2 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
-    actor_rollout_ref.rollout.limit_images=5 \
+    actor_rollout_ref.rollout.limit_images=$LIMIT_IMAGES \
     actor_rollout_ref.rollout.regex_pattern=True \
     algorithm.use_kl_in_reward=False \
     custom_reward_function.path=$REWARD_PATH \

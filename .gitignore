@@ -91,19 +91,15 @@ instance/
 docs/_build/
 
 # scipts
-scripts/*
-!scripts/data_download/
-!scripts/templete/
-!scripts/data_download/**
-!scripts/templete/**
-!scripts/test/
-!scripts/test/OpenAI/
-!scripts/test/OpenAI/**
-!scripts/test/OpenAI/*.py
-!scripts/test/Qwen/
-!scripts/test/Qwen/**
-!scripts/test/Qwen/*.py
-scripts/test/**/*.json
+api_access.py
+scripts/test/
+extracted_by_round/
+outputs/
+*.json
+example_analysis/
+find_id.py
+figure_helper.py
+
 
 # PyBuilder
 target/
