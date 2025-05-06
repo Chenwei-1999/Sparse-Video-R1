@@ -47,7 +47,7 @@ def generate_prompt(
     info_prompt = f"You have a video with {len(timestamps)} {video_info}." if first_round else ""
 
 
-    return textwrap.dedent(f"""
+    return f"""
         {info_prompt}
 
         The sampled frame timestamps (in seconds) are: {timestamps}.
@@ -56,5 +56,4 @@ def generate_prompt(
         {question}
       
         {format_prompt}
-
-    """).strip()
+    """

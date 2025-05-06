@@ -210,6 +210,7 @@ class RLHFDataset(Dataset):
                 images = [process_image(image) for image in row_dict.pop(self.image_key)]
                 multi_modal_data["image"] = images
             videos = None
+            
             if self.video_key in row_dict:
                 messages = self._build_messages(row_dict)
                 
@@ -365,9 +366,9 @@ class RLHFDataset(Dataset):
         else:
             position_ids = compute_position_id_with_mask(attention_mask)
 
-        row_dict["input_ids"] = input_ids[0]
-        row_dict["attention_mask"] = attention_mask[0]
-        row_dict["position_ids"] = position_ids[0]
+        row_dict["input_ids"]      = input_ids[0].long()
+        row_dict["attention_mask"] = attention_mask[0].long()
+        row_dict["position_ids"]   = position_ids[0].long()
 
         raw_prompt_ids = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
         if len(raw_prompt_ids) > self.max_prompt_length:

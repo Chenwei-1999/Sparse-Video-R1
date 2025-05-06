@@ -109,11 +109,7 @@ class LLMGenerationManager:
                 skip_special_tokens=True
             )
                         
-            if all(dones) or step == self.max_rounds:
-                for idx, orig_idx in enumerate(active_indices):
-                # put the 1-element DataProto slice into its original slot
-                    final_output_batch[orig_idx] = gen_output[idx:idx+1]
-                break 
+
             # 2) error/correction checking for active samples
             current_times = [rollings.non_tensor_batch['extra_info'][i]['times'] for i in active_indices]
 
@@ -135,14 +131,20 @@ class LLMGenerationManager:
                     self.completion_rounds[orig_idx] = step
                     final_output_batch[orig_idx] = gen_output[idx:idx+1]
 
-            
+
             for idx, orig_idx in enumerate(active_indices):
                 # Update current timestamps for next round
                 rollings.non_tensor_batch['extra_info'][orig_idx]['times'] = next_obs[idx]
                 # Update past_times for the current step
                 rollings.non_tensor_batch['extra_info'][orig_idx]['past_times'][step-1] = next_obs[idx]
                 rollings.non_tensor_batch['extra_info'][orig_idx]['current_turn'] = step
-
+                                
+            if all(dones) or (step == self.max_rounds):
+                for idx, orig_idx in enumerate(active_indices):
+                # put the 1-element DataProto slice into its original slot
+                    final_output_batch[orig_idx] = gen_output[idx:idx+1]
+                break 
+            
             # 5) Sample frames for next round for non-done samples, do not sample frames for done samples and correction samples
             sampled_frames_batch = []
             for idx, orig_idx in enumerate(active_indices):
@@ -159,6 +161,7 @@ class LLMGenerationManager:
                         )
                     )
 
+            
             # 6) Update rolling state with new frames and observations
             rollings = self.update_rollings_state(
                 rollings,
@@ -285,8 +288,7 @@ class LLMGenerationManager:
 
             
             # Handle position_ids if using Qwen2VL
-            print(self.processor)
-            print(self.processor.image_processor.__class__.__name__)
+
             if self.processor is not None and self.processor.image_processor.__class__.__name__ == "Qwen2VLImageProcessor":
                 from verl.models.transformers.qwen2_vl import get_rope_index
                 
@@ -373,7 +375,7 @@ class LLMGenerationManager:
 
         # Pad batch to be divisible by world_size
         padded_batch, pad_size = pad_dataproto_to_divisor(gen_batch, self.actor_rollout_wg.world_size)
-        
+        print(f"padded batch size: {padded_batch.batch['input_ids'].shape}")
         # Generate with padded batch
         output_batch = self.actor_rollout_wg.generate_sequences(padded_batch)
         
@@ -465,7 +467,7 @@ class LLMGenerationManager:
             elif error_type == 'valid_frame_ops':
                 add_frames = message['add']
                 remove_frames = message['remove']
-                next_frames = update_frames(frames, add_frames, remove_frames, self.max_frames)
+                next_frames = update_frames(frames, add_frames, remove_frames)
                 next_obs.append(next_frames)
                 dones.append(False)
             else:

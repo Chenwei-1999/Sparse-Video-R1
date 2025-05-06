@@ -1,10 +1,10 @@
 #!/bin/bash
 set -x
 export HYDRA_FULL_ERROR=1
-export HF_HOME=/home/zye52/scr4_hlee283/zye52
+export HF_HOME=/scratch4/hlee283/zye52
 export N_GPUS=4
 export BASE_MODEL=Qwen/Qwen2.5-VL-3B-Instruct
-export DATA_DIR=/home/zye52/scr4_hlee283/zye52/VLM-R1
+export DATA_DIR=/scratch4/hlee283/zye52/VLM-R1
 export EXPERIMENT_NAME=qwen2.5-3b-uniform
 export SAMPLING_STRATEGY=uniform #choose from "all", "random", "uniform"
 export REWARD_PATH=verl/verl/utils/agents/reward_function.py
