@@ -33,7 +33,7 @@ import verl.utils.torch_functional as verl_F
 from verl.utils.model import compute_position_id_with_mask
 
 from verl.utils.agents.frames_sampler import sample_video_frames
-from verl.utils.agents.construct_prompt import generate_prompt
+from verl.utils.agents.construct_prompt import generate_prompt, generate_prompt_for_force_round
 from verl.utils.agents.reward_function import discretize_time_intervals, convert_timestamps_to_set
 import random
 import json
@@ -100,8 +100,8 @@ class RLHFDataset(Dataset):
         self.max_rounds = config.get("max_rounds", 5)
         self.sampling_strategy = config.get("sampling_strategy", "random")
         self.resolution = config.get("resolution", 1)
-        self.max_height = config.get("max_height", 240)
-        self.max_width = config.get("max_width", 320)
+        self.max_height = config.get("max_height", 512)
+        self.max_width = config.get("max_width", 512)
 
         # note: this video is used for frames sampling
         self.mm_key = config.get("mm_key", "frames")
@@ -217,7 +217,7 @@ class RLHFDataset(Dataset):
                 videos = [process_video(video) for video in row_dict.pop(self.video_key)]
                 multi_modal_data["video"] = [video.numpy() for video in videos]
 
-            if self.mm_key == row_dict['mm_key']:
+            if self.mm_key and self.mm_key == row_dict['mm_key']:
                 video_path = row_dict['extra_info']['video_path']
                 height = row_dict['extra_info']['height']
                 width = row_dict['extra_info']['width']
@@ -250,10 +250,11 @@ class RLHFDataset(Dataset):
 
                 images = [process_image({"image": frame['image']}) for frame in sampled_frames]
                 multi_modal_data["image"] = images
-                prompt = generate_prompt(question=question, 
+                prompt = generate_prompt_for_force_round(question=question, 
                           timestamps=sampled_times, 
                           total_times=total_times,
                           max_rounds=self.max_rounds, 
+                          n_round=1,
                           max_frames=self.max_frames)
                 
                 row_dict["extra_info"]["prompt"] = prompt

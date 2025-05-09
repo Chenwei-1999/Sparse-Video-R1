@@ -346,7 +346,52 @@ class RayPPOTrainer:
                           experiment_name=self.config.trainer.experiment_name,
                           default_backend=self.config.trainer.logger,
                           config=full_config)
+        
+#      def _validate_config(self):
+# -        
+# -        raw = self.config.critic.get("ulysses_sequence_parallel_size", 1)
+# -
+# -        # 2. Cast
+# -        try:
+# -            size = int(raw)
+# -        except (TypeError, ValueError):
+# -            # decide on a safe fallback
+# -            size = 1
+# -
+# -        # 3. Write back into the dict
+# -        self.config.critic["ulysses_sequence_parallel_size"] = size
+# +        # ——————————————————————————————————————————————
+# +        # 0. Make sure every "ulysses_sequence_parallel_size" is an int
+# +        for node in (
+# +            self.config.critic,
+# +            self.config.actor_rollout_ref.actor,
+# +            self.config.actor_rollout_ref.ref,
+# +        ):
+# +            raw = node.get("ulysses_sequence_parallel_size", 1)
+# +            try:
+# +                ival = int(raw)
+# +            except (TypeError, ValueError):
+# +                ival = 1
+# +            # write it back so every later .get(...) returns an int
+# +            node["ulysses_sequence_parallel_size"] = ival
+# +        # ——————————————————————————————————————————————
+# +
+#          config = self.config
+#          # number of GPUs total
+#          n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
+
     def _validate_config(self):
+        for node in (
+            self.config.critic,
+            self.config.actor_rollout_ref.actor,
+            self.config.actor_rollout_ref.ref,
+        ):
+            raw = node.get("ulysses_sequence_parallel_size", 1)
+            try:
+                ival = int(raw)
+            except (TypeError, ValueError):
+                ival = 1
+            node["ulysses_sequence_parallel_size"] = ival
         config = self.config
         # number of GPUs total
         n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
@@ -415,6 +460,7 @@ class RayPPOTrainer:
         if not config.actor_rollout_ref.actor.use_dynamic_bsz:
             assert config.data.train_batch_size >= config.actor_rollout_ref.actor.ppo_mini_batch_size
             sp_size = config.actor_rollout_ref.actor.get("ulysses_sequence_parallel_size", 1)
+
             if config.actor_rollout_ref.actor.ppo_micro_batch_size is not None:
                 assert config.actor_rollout_ref.actor.ppo_mini_batch_size % config.actor_rollout_ref.actor.ppo_micro_batch_size == 0
                 assert config.actor_rollout_ref.actor.ppo_micro_batch_size * sp_size >= n_gpus
@@ -432,10 +478,11 @@ class RayPPOTrainer:
         # critic
         if self.use_critic and not config.critic.use_dynamic_bsz:
             assert config.data.train_batch_size >= config.critic.ppo_mini_batch_size
-            sp_size = config.critic.get("ulysses_sequence_parallel_size", 1)
+       
             if config.critic.ppo_micro_batch_size is not None:
                 assert config.critic.ppo_mini_batch_size % config.critic.ppo_micro_batch_size == 0
                 assert config.critic.ppo_micro_batch_size * sp_size >= n_gpus
+        sp_size = config.critic.get("ulysses_sequence_parallel_size", 1)
 
         # Check if use_remove_padding is enabled when using sequence parallelism for fsdp
         if config.actor_rollout_ref.actor.strategy == "fsdp" and (config.actor_rollout_ref.actor.get("ulysses_sequence_parallel_size", 1) > 1 or config.actor_rollout_ref.ref.get("ulysses_sequence_parallel_size", 1) > 1):

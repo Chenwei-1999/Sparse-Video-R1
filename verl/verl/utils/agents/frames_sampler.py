@@ -68,32 +68,31 @@ def sample_video_frames(
 ) -> Tuple[List[Dict[str, Any]], List[int], int]:
     """
     Sample frames from a video with improved caching and error handling.
-    
+
     Args:
         video_path: Path to the video file
         height: Desired height of output frames
         width: Desired width of output frames
         num_frames: Number of frames to sample
-        strategy: Sampling strategy ('uniform', 'random', 'all')
+        strategy: Sampling strategy ('uniform', 'random', 'all', 'exact')
         ratio: Scaling factor for width and height
         cache_dir: Directory to store cached frames
         use_cache: Whether to use frame caching
-        
+        exact_times: List of exact seconds to extract frames (used when strategy='exact')
+
     Returns:
         Tuple containing:
             - List of frame dictionaries with 'image', 'width', 'height'
             - List of timestamps
             - Total number of 1fps frames available
     """
-    # Parameter validation
     if num_frames < 1:
         raise ValueError("num_frames must be at least 1")
-    if strategy not in ['uniform', 'random', 'all']:
-        raise ValueError("strategy must be 'uniform', 'random', or 'all'")
+    if strategy not in ['uniform', 'random', 'all', 'exact']:
+        raise ValueError("strategy must be 'uniform', 'random', 'all', or 'exact'")
     if ratio <= 0 or ratio > 1:
         raise ValueError("ratio must be between 0 and 1")
-    
-    # Get video properties with retry
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
@@ -105,28 +104,25 @@ def sample_video_frames(
                 raise
             logger.warning(f"Retry {attempt + 1}/{max_retries} after error: {str(e)}")
             continue
-    
-    # Apply scaling to dimensions
+
     if ratio != 1:
         width = int(width * ratio) if width else None
         height = int(height * ratio) if height else None
-    
-    # Build frame candidates list
+
     candidates = []
-    for sec in range(0, int(duration) + 1):
+    for sec in range(0, int(duration)):
         frame_idx = int(round(sec * fps))
         if frame_idx < total_frames:
             candidates.append((frame_idx, int(sec)))
-    
+
     total_1fps_frames = len(candidates)
     if not candidates:
         raise ValueError("No valid frames found in video")
-    
-    # Select frames based on strategy
+
     if strategy == 'all':
         strategy = random.choice(['random', 'uniform'])
-    
-    if strategy == 'random':
+
+    elif strategy == 'random':
         sampled_candidates = sorted(
             random.sample(candidates, min(num_frames, total_1fps_frames)),
             key=lambda x: x[0]
@@ -140,15 +136,13 @@ def sample_video_frames(
                 candidates[min(int(i * step), total_1fps_frames - 1)]
                 for i in range(num_frames)
             ]
-    
-    # Extract and process frames
+
     sampled_frames = []
     sampled_times = []
     cap = cv2.VideoCapture(video_path)
-    
+
     try:
         for frame_idx, timestamp in sampled_candidates:
-            # Check cache first if enabled
             cache_key = None
             if use_cache and cache_dir:
                 cache_key = f"{os.path.basename(video_path)}_{frame_idx}_{width}x{height}.jpg"
@@ -166,21 +160,18 @@ def sample_video_frames(
                         continue
                     except Exception as e:
                         logger.warning(f"Failed to read cached frame: {str(e)}")
-            
-            # Read frame from video
+
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
-            
+
             if not ret or frame is None or frame.size == 0:
                 logger.warning(f"Failed to read frame {frame_idx}")
                 continue
-            
+
             try:
-                # Convert and resize frame
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 pil_img = Image.fromarray(frame_rgb)
-                
-                # Calculate dimensions
+
                 if width or height:
                     orig_width, orig_height = pil_img.size
                     if width is None:
@@ -190,14 +181,12 @@ def sample_video_frames(
                     pil_img = pil_img.resize((width, height))
                 else:
                     width, height = pil_img.size
-                
-                # Convert to bytes
+
                 buf = BytesIO()
                 pil_img.save(buf, format='JPEG', quality=95)
                 image_bytes = buf.getvalue()
                 buf.close()
-                
-                # Cache frame if enabled
+
                 if use_cache and cache_dir and cache_key:
                     os.makedirs(cache_dir, exist_ok=True)
                     try:
@@ -205,24 +194,24 @@ def sample_video_frames(
                             f.write(image_bytes)
                     except Exception as e:
                         logger.warning(f"Failed to cache frame: {str(e)}")
-                
+
                 sampled_frames.append({
                     'image': encode_image_to_base64(image_bytes),
                     'width': width,
                     'height': height,
                 })
                 sampled_times.append(timestamp)
-                
+
             except Exception as e:
                 logger.warning(f"Error processing frame {frame_idx}: {str(e)}")
-                continue
-    
+                continueK
+
     finally:
         cap.release()
-    
+
     if not sampled_frames:
         raise ValueError(f"No frames could be successfully sampled from video {video_path}")
-    
+
     return sampled_frames, sampled_times, total_1fps_frames
 
 def sample_frames_from_next_obs(

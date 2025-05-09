@@ -1,82 +1,77 @@
 import re
+from typing import List, Tuple, Union, Set, Optional, Dict, Any
 import random
-import math
-from typing import Dict, Any, Union, Tuple, Optional, List, Set
-import logging
 import numpy as np
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Helper for parsing frame lists
-def parse_frame_list(s: str) -> List[str]:
-    return [item.strip() for item in s.split(',') if item.strip()]
-
-# Refactored extract_solution function
 def extract_solution(
     solution_str: str,
     current_frames: List[int] = None,
     max_frames: int = None,
     total_times: int = None,
-    only_answer: bool = False
-) -> Tuple[str, Union[str, dict]]:
+    only_answer: bool = False, 
+    step: int = None
+) -> Tuple[str, Union[str, List[int]]]:
+    
     def _validate_answer(text: str) -> Tuple[str, str]:
         txt = text.strip()
         if not re.fullmatch(r"\d+", txt):
             return 'format_error', 'Answer must be a single number.'
         return 'valid_answer', txt
 
-    def _validate_frame_ops(frame_text: str) -> Tuple[str, Union[dict, str]]:
-        add_match = re.search(r"\+\[\s*(.*?)\s*\]", frame_text)
-        remove_match = re.search(r"-\[\s*(.*?)\s*\]", frame_text)
-        if not (add_match or remove_match):
-            return 'format_error', 'Missing both add and remove operations.'
+    def _validate_frame_selection(frame_text: str) -> Tuple[str, Union[List[int], str]]:
+        match = re.fullmatch(r"\s*(\d+(?:\s*,\s*\d+)*)\s*", frame_text)
+        if not match:
+            return 'format_error', 'Frames must be a comma-separated list of numbers.'
 
-        added = parse_frame_list(add_match.group(1)) if add_match else []
-        removed = parse_frame_list(remove_match.group(1)) if remove_match else []
+        try:
+            frames = [int(x.strip()) for x in match.group(1).split(',')]
+        except ValueError:
+            return 'format_error', 'All frame indices must be integers.'
 
-        if any(not item.isdigit() for item in added + removed):
-            return 'format_error', 'Frame indices must be digits.'
-        added = [int(x) for x in added]
-        removed = [int(x) for x in removed]
+        if any(f < 0 for f in frames):
+            return 'frame_error', 'Frame indices must be non-negative.'
 
-        if current_frames is not None and any(f not in current_frames for f in removed):
-            return 'frame_error', 'Attempt to remove non-existent frames.'
-        if total_times is not None and any(f < 0 or f > total_times for f in added):
-            return 'frame_error', 'Attempt to add non-existent frames.'
-        if current_frames is not None and any(f in current_frames for f in added):
-            return 'frame_error', 'Duplicate frame addition.'
+        if current_frames is not None and frames == current_frames:
+            return 'frame_error', 'Selected frames are identical to current frames.'
 
-        new_count = (len(current_frames or []) - len(removed) + len(added))
-        if max_frames is not None and new_count > max_frames:
-            return 'frame_error', 'Exceeds maximum allowed frames.'
-        if new_count < 1:
-            return 'frame_error', 'Not enough frames left after operations.'
+        if max_frames is not None and len(frames) > max_frames:
+            return 'frame_error', f'Number of selected frames ({len(frames)}) exceeds max_frames ({max_frames}).'
 
-        return 'valid_frame_ops', {'add': added, 'remove': removed}
+        if total_times is not None and any(f >= total_times for f in frames):
+            return 'frame_error', f'Some frames exceed total frame count ({total_times}).'
 
-    think_match = re.search(r"<think>(.*?)</think>", solution_str, re.DOTALL)
-    frame_match = re.search(r"<frames>(.*?)</frames>", solution_str, re.DOTALL)
-    answer_match = re.search(r"<answer>(.*?)</answer>", solution_str, re.DOTALL)
+        return 'valid_frames', frames
+
+    # === Extract think ===
+    # think_match = re.search(r"<think>(.*?)</think>", solution_str, re.DOTALL)
+    # if not think_match:
+    #     return 'format_error', 'Missing or incomplete <think> tag.'
+  
+    # === Extract all matches with their positions ===
+    tag_pattern = re.compile(r"<(?P<tag>frames?|answer)>(.*?)</(?P=tag)>", re.DOTALL)
+    matches = list(tag_pattern.finditer(solution_str))
 
     if only_answer:
-        if not answer_match:
-            return 'format_error', 'Missing incomplete <answer> tag.'
-        return _validate_answer(answer_match.group(1))
+        # Select first answer only
+        for match in matches:
+            if match.group("tag") == "answer":
+                return _validate_answer(match.group(2))
+        return 'format_error', 'Missing <answer> tag.'
 
-    errors = []
-    if not think_match:
-        errors.append('Missing <think> reasoning or incomplete <think> tag.')
+    if not matches:
+        return 'format_error', 'Missing <frames> or <answer> tag.'
 
-    if answer_match:
-        return _validate_answer(answer_match.group(1))
+    # Select the first occurring tag (frames or answer)
+    first_tag = matches[0].group("tag")
+    first_content = matches[0].group(2)
 
-    if not frame_match:
-        errors.append('Neither <frames> nor <answer> provided, or incomplete <frames> tag.')
-        return 'format_error', '\n'.join(errors)
-
-    return _validate_frame_ops(frame_match.group(1))
+    if first_tag.startswith("frame"):
+        return _validate_frame_selection(first_content)
+    elif first_tag == "answer":
+        return _validate_answer(first_content)
+    else:
+        return 'format_error', 'Unknown tag type encountered.'
 
 
 def discretize_time_intervals(intervals: List[List[float]]) -> Set[float]:
