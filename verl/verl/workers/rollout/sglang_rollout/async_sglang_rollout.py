@@ -276,14 +276,11 @@ class AsyncSGLangRollout(BaseRollout):
            frequency_penalty=0.0,
            repetition_penalty=1.0,
        )
-       self.pattern = config.get("pattern", True)
        # supporting adding any sampling params from the config file
        for k in config.keys():
            if hasattr(SamplingParams(), str(k)):
                kwargs[k] = config.get(k)
 
-      #  if self.pattern:
-      #     kwargs["regex"] =  '<think>.*?</think>(<frames>\d+(,\d+)*</frames>|<answer>\d+</answer>)'
        print(f"kwargs: {kwargs}")
 
 
@@ -391,11 +388,6 @@ class AsyncSGLangRollout(BaseRollout):
 
        # users can customize different sampling_params at different run
        with self.update_sampling_params(**kwargs):
-           if self.pattern  & step & max_rounds:
-               if step == max_rounds:
-                   self.sampling_params["regex"] =  "<answer>[0-9]</answer>"
-               else:
-                   self.sampling_params["regex"] =  "<frames>\s*\d+(?:\s*,\s*\d+)*\s*</frames>"
 
           
            if self._tp_rank == 0:
@@ -473,7 +465,8 @@ class AsyncSGLangRollout(BaseRollout):
 
        # free cache engine
        if self.config.free_cache_engine and self._engine is not None:
-           self._engine.tokenizer_manager.flush_cache()
+          #  self._engine.tokenizer_manager.flush_cache()
+          self._engine.tokenizer_manager.flush_cache()
 
 
        return DataProto(batch=batch)
@@ -549,8 +542,6 @@ class AsyncSGLangRollout(BaseRollout):
                    kwargs["n"] = 1
                # users can customize different sampling_params at different run
                with self.update_sampling_params(**kwargs):
-                   if self.pattern:
-                       self.sampling_params["regex"] =  "<(?P<tag>frames?|answer)>(.*?)</(?P=tag)>"
                    output = await self._engine.async_generate(
                        prompt=generation_prompt,
                        sampling_params=self.sampling_params,

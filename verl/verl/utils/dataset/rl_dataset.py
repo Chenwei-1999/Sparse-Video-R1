@@ -250,7 +250,7 @@ class RLHFDataset(Dataset):
 
                 images = [process_image({"image": frame['image']}) for frame in sampled_frames]
                 multi_modal_data["image"] = images
-                prompt = generate_prompt_for_force_round(question=question, 
+                prompt = generate_prompt(question=question, 
                           timestamps=sampled_times, 
                           total_times=total_times,
                           max_rounds=self.max_rounds, 
@@ -272,7 +272,7 @@ class RLHFDataset(Dataset):
 
                 # exit(0)
                 raw_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-
+                raw_prompt+="<think>"
                 model_inputs = self.processor(text=[raw_prompt], images=images, videos=videos, return_tensors="pt")
                 # =================================
                 # grab the first sequence

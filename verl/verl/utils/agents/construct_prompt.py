@@ -9,7 +9,6 @@ def generate_prompt(
     n_round: int = 1,
     max_rounds: int = 5,
     max_frames: int = 5,
-    first_round: bool = True
 ) -> str:
     """
     Generate a prompt string with improved structure and error handling.
@@ -40,10 +39,10 @@ def generate_prompt(
         Notice:
         - If the available frames provide enough information, answer directly in <answer></answer>, for example, <answer>1</answer>.
         - Otherwise, specify which frames to use in <frames></frames>, for example, <frames>1, 2, 3</frames> means use frames in 1, 2, 3 seconds.
-        - You are allowed to add/remove frames and made total frames up to {max_frames} frames.
+        - You are allowed to select up to {max_frames} frames in this round.
         - Use <think></think> for reasoning before you answer the question or select frames, for example, <think>I need to add frames from 1, 2, 3 seconds to answer the question.</think>
-        """ if n_round==1 or first_round else ""
-    info_prompt = f"You have a video with {len(timestamps)} {video_info}." if n_round==1 or first_round else ""
+        """ if n_round==1 else ""
+    info_prompt = f"You have a video with {len(timestamps)} {video_info}." if n_round==1  else ""
 
 
     return f"""

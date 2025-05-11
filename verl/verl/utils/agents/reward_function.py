@@ -10,7 +10,6 @@ def extract_solution(
     max_frames: int = None,
     total_times: int = None,
     only_answer: bool = False, 
-    step: int = None
 ) -> Tuple[str, Union[str, List[int]]]:
     
     def _validate_answer(text: str) -> Tuple[str, str]:
@@ -22,18 +21,18 @@ def extract_solution(
     def _validate_frame_selection(frame_text: str) -> Tuple[str, Union[List[int], str]]:
         match = re.fullmatch(r"\s*(\d+(?:\s*,\s*\d+)*)\s*", frame_text)
         if not match:
-            return 'format_error', 'Frames must be a comma-separated list of numbers.'
+            return 'format_error', 'Frames must be a comma-separated list of numbers like <frames>1, 2, 3</frames>.'
 
         try:
             frames = [int(x.strip()) for x in match.group(1).split(',')]
         except ValueError:
-            return 'format_error', 'All frame indices must be integers.'
+            return 'format_error', 'All frame indices must be integers like <frames>1, 2, 3</frames>.'
 
         if any(f < 0 for f in frames):
-            return 'frame_error', 'Frame indices must be non-negative.'
+            return 'frame_error', f'Frame indices must be non-negative. You should not select {[f for f in frames if f < 0]} as frames.'
 
         if current_frames is not None and frames == current_frames:
-            return 'frame_error', 'Selected frames are identical to current frames.'
+            return 'frame_error', 'Selected frames are identical to current frames. You should select different frames.'
 
         if max_frames is not None and len(frames) > max_frames:
             return 'frame_error', f'Number of selected frames ({len(frames)}) exceeds max_frames ({max_frames}).'
@@ -57,10 +56,10 @@ def extract_solution(
         for match in matches:
             if match.group("tag") == "answer":
                 return _validate_answer(match.group(2))
-        return 'format_error', 'Missing <answer> tag.'
+        return 'format_error', 'Missing <answer> tag. You should use <answer></answer> to indicate the answer.'
 
     if not matches:
-        return 'format_error', 'Missing <frames> or <answer> tag.'
+        return 'format_error', 'Missing <frames> or <answer> tag. You should use <answer></answer> to indicate the answer or <frames></frames> to indicate the frames.'
 
     # Select the first occurring tag (frames or answer)
     first_tag = matches[0].group("tag")
@@ -107,12 +106,19 @@ def calculate_jaccard_similarity(set1: Set[float], set2: Set[float]) -> float:
     union = len(set1.union(set2))
     return intersection / union
 
+def calculate_coverage(pred, gt):
+    """
+    Returns coverage of pred by gt as a percentage.
+    """
+    pred_set, gt_set = set(pred), set(gt)
+    inter = pred_set & gt_set
+    return len(inter) / len(pred_set)
+
 def compute_score(
     data_source: str,
     solution_str: str,
     ground_truth: str,
     extra_info: Optional[Dict[str, Any]] = None,
-    status: str = 'running'
 ) -> float:
     """
     Compute reward score based on Jaccard similarity between selected frames and ground truth.
@@ -126,27 +132,33 @@ def compute_score(
     Returns:
         float: Jaccard similarity score between 0 and 1
     """
+    solution_str = '<think>'+solution_str # since we use <think> to indicate the solution string in the generation prompt
     current_times = extra_info['times']
     ground_truth_times = extra_info['times_GT']
     current_times = convert_timestamps_to_set(current_times)
     ground_truth_times = convert_timestamps_to_set(ground_truth_times)
-    jaccard_score = calculate_jaccard_similarity(current_times, ground_truth_times)
+    coverage_score = calculate_coverage(current_times, ground_truth_times)
     
 
-    status, answer = extract_solution(solution_str, only_answer=True)
+
+    status, answer = extract_solution(solution_str, only_answer=False)
+    if status == 'format_error':
+        print(f"Format Error: {solution_str}")
+        return -1.0
+    
     correct_score = 0.0
-    if status == 'valid_answer':
+    if extra_info['type'] == 'test' or extra_info['type'] == 'val':
         correct_score = 1.0 if answer == ground_truth else 0.0
     else:
         return 0.0
     
-    final_score = 0.5 * jaccard_score + 0.5 * correct_score
+    final_score = 0.5 * coverage_score + 0.5 * correct_score
     # Add debug logging occasionally
     if random.randint(1, 64) == 1:
         print("--------------------------------")
         print(f"Current Frames: {sorted(list(current_times))}")
         print(f"Ground Truth Frames: {sorted(list(ground_truth_times))}")
-        print(f"Jaccard Score: {jaccard_score:.4f}")
+        print(f"Coverage Score: {coverage_score:.4f}")
         print(f"Correct Score: {correct_score:.4f}")
         print(f"Final Score: {final_score:.4f}")
         print(f"Past Times: {extra_info['past_times']}")

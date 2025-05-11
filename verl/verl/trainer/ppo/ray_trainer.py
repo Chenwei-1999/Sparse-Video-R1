@@ -17,9 +17,10 @@
 FSDP PPO Trainer with Ray-based single controller.
 This trainer supports model-agonistic model initialization with huggingface
 """
-
+from itertools import zip_longest
 import json
 import os
+import random
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
@@ -27,7 +28,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from pprint import pprint
-from typing import Dict, Type
+from typing import Dict, Type, List
 
 import numpy as np
 import ray
@@ -37,7 +38,7 @@ from omegaconf import OmegaConf, open_dict
 from torch.utils.data import Dataset, RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 from tqdm import tqdm
-
+from transformers import AutoTokenizer
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.base import Worker
@@ -144,7 +145,7 @@ class ResourcePoolManager:
                 raise ValueError(f"Resource pool {resource_pool_name}: {num_gpus}*{num_nodes}" + "cannot be satisfied in this ray cluster")
 
 
-def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, kl_penalty="kl", multi_turn=False):
+def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, kl_penalty="kl", multi_turn=True):
     responses = data.batch["responses"]
     response_length = responses.size(1)
     token_level_scores = data.batch["token_level_scores"]
@@ -177,17 +178,62 @@ def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, 
     return data, metrics
 
 
-def compute_response_mask(data: DataProto):
-    responses = data.batch["responses"]
-    response_length = responses.size(1)
-    attention_mask = data.batch["attention_mask"]
-    return attention_mask[:, -response_length:]
+
+def get_special_tokens(tokenizer: AutoTokenizer):
+    if "qwen" in tokenizer.name_or_path.lower():
+        special_token = tokenizer.encode("<|im_start|>")[0]
+        reward_token = tokenizer.encode("<|im_end|>")[0]
+    elif "llama-3" in tokenizer.name_or_path.lower():
+        special_token = 128006
+        reward_token = 128009
+    else:
+        raise ValueError(f"Unsupported model: {tokenizer.name_or_path}")
+    return special_token, reward_token
+
+def get_masks_and_scores(data: DataProto,
+                         tokenizer: AutoTokenizer,
+                         enable_response_mask: bool = True):
+    # 1) get *all* tokenizer special IDs at once
+    input_ids = data.batch["input_ids"]
+    response_length = data.batch["responses"].size(1)
+    ignore_ids = set(tokenizer.all_special_ids)
+
+    # 2) build turn indicators as before
+    special_token, reward_token = get_special_tokens(tokenizer)
+    turn_starts     = (input_ids == special_token).long()
+    turn_indicators = torch.cumsum(turn_starts, dim=-1)
+
+    # 3) pick only assistant spans
+    if enable_response_mask:
+        loss_mask = (turn_indicators % 2 == 1) & (turn_indicators > 1)
+    else:
+        loss_mask = (turn_indicators > 1)
+
+    # 4) strip out *every* special token ID
+    for bad_id in ignore_ids:
+        loss_mask &= (input_ids != bad_id)
+
+    # 5) keep response_mask the same
+    response_mask = loss_mask[:, -response_length:]
+
+    # Option B – inspect the whole batch
+    # for row in tokenizer.batch_decode(
+    #         input_ids[:, -response_length:], skip_special_tokens=False):
+    #     print(row)
+    #     response = tokenizer.decode(data.batch["responses"], skip_special_tokens=True)
+
+    # if random.randint(0, 2) == 1:
+
+    return loss_mask, response_mask
+
+
 
 
 def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_repeat=1, multi_turn=False, norm_adv_by_std_in_grpo=True):
     # Back-compatible with trainers that do not compute response mask in fit
     if "response_mask" not in data.batch:
-        data.batch["response_mask"] = compute_response_mask(data)
+        _, response_mask = get_masks_and_scores(data, data.tokenizer, enable_response_mask=True)
+        data.batch["response_mask"] = response_mask
     # prepare response group
     # TODO: add other ways to estimate advantages
     if adv_estimator == AdvantageEstimator.GAE:
@@ -347,39 +393,6 @@ class RayPPOTrainer:
                           default_backend=self.config.trainer.logger,
                           config=full_config)
         
-#      def _validate_config(self):
-# -        
-# -        raw = self.config.critic.get("ulysses_sequence_parallel_size", 1)
-# -
-# -        # 2. Cast
-# -        try:
-# -            size = int(raw)
-# -        except (TypeError, ValueError):
-# -            # decide on a safe fallback
-# -            size = 1
-# -
-# -        # 3. Write back into the dict
-# -        self.config.critic["ulysses_sequence_parallel_size"] = size
-# +        # ——————————————————————————————————————————————
-# +        # 0. Make sure every "ulysses_sequence_parallel_size" is an int
-# +        for node in (
-# +            self.config.critic,
-# +            self.config.actor_rollout_ref.actor,
-# +            self.config.actor_rollout_ref.ref,
-# +        ):
-# +            raw = node.get("ulysses_sequence_parallel_size", 1)
-# +            try:
-# +                ival = int(raw)
-# +            except (TypeError, ValueError):
-# +                ival = 1
-# +            # write it back so every later .get(...) returns an int
-# +            node["ulysses_sequence_parallel_size"] = ival
-# +        # ——————————————————————————————————————————————
-# +
-#          config = self.config
-#          # number of GPUs total
-#          n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
-
     def _validate_config(self):
         for node in (
             self.config.critic,
@@ -725,7 +738,11 @@ class RayPPOTrainer:
                 test_output_gen_batch =  generation_manager.run_llm_loop(test_gen_batch)
                 self.async_rollout_manager.sleep()
 
-
+            
+            loss_mask, response_mask, = get_masks_and_scores(test_output_gen_batch, self.tokenizer, enable_response_mask=True)
+            test_output_gen_batch.batch["response_mask"] = response_mask
+            
+            test_output_gen_batch.batch["loss_mask"] = loss_mask
             # unpad
             # test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
             print("validation generation end")
@@ -1054,7 +1071,7 @@ class RayPPOTrainer:
                         with _timer("gen_max", timing_raw):
                             gen_baseline_batch = deepcopy(gen_batch)
                             gen_baseline_batch.meta_info["do_sample"] = False
-                            gen_baseline_output = self.generation_manager.run_llm_loop(gen_baseline_batch)
+                            gen_baseline_output = generation_manager.run_llm_loop(gen_baseline_batch)
 
                             batch = batch.union(gen_baseline_output)
                             reward_baseline_tensor = self.reward_fn(batch)
@@ -1071,8 +1088,9 @@ class RayPPOTrainer:
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
 
-
-                    batch.batch["response_mask"] = compute_response_mask(batch)
+                    loss_mask, response_mask = get_masks_and_scores(batch, self.tokenizer, enable_response_mask=True)
+                    batch.batch["response_mask"] = response_mask
+                    batch.batch["loss_mask"] = loss_mask
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
                     # Please take care when you implement group based adv computation such as GRPO and rloo
@@ -1097,8 +1115,10 @@ class RayPPOTrainer:
                     with _timer("old_log_prob", timing_raw):
                         old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
                         entropys = old_log_prob.batch["entropys"]
-                        response_masks = batch.batch["response_mask"]
+                        response_masks = batch.batch["response_mask"]       # [B, prompt+resp_len]
+
                         loss_agg_mode = self.config.actor_rollout_ref.actor.loss_agg_mode
+                        print(f"entropys shape: {entropys.shape}, mask_for_entropys shape: {response_masks.shape}")
                         entropy_loss = agg_loss(loss_mat=entropys, loss_mask=response_masks, loss_agg_mode=loss_agg_mode)
                         old_log_prob_metrics = {"actor/entropy_loss": entropy_loss.detach().item()}
                         metrics.update(old_log_prob_metrics)
@@ -1146,10 +1166,11 @@ class RayPPOTrainer:
                             lam=self.config.algorithm.lam,
                             num_repeat=self.config.actor_rollout_ref.rollout.n,
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
-                            multi_turn=self.config.actor_rollout_ref.rollout.multi_turn.enable,
+                            multi_turn=True,
                         )
 
                     # update critic
+                    # no for GRPO
                     if self.use_critic:
                         with _timer("update_critic", timing_raw):
                             critic_output = self.critic_wg.update_critic(batch)
@@ -1160,7 +1181,7 @@ class RayPPOTrainer:
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
                         with _timer("update_actor", timing_raw):
-                            batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
+                            batch.meta_info["multi_turn"] = True
                             actor_output = self.actor_rollout_wg.update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                         metrics.update(actor_output_metrics)
