@@ -117,10 +117,12 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
     }
     if 'extra_info' in batch.non_tensor_batch:
         turn_list = []
+        all_past_times = []
         for info in batch.non_tensor_batch['extra_info']:
             if isinstance(info, dict):
                 turn = info.get("current_round", 1)
                 turn_list.append(turn)
+                all_past_times.append(info.get("past_times", [[[]]]))
         if turn_list:
             turn_tensor = torch.tensor(turn_list, dtype=torch.float32)
             metrics.update({
@@ -128,6 +130,18 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
                 "dialogue/turns/max": turn_tensor.max().item(),
                 "dialogue/turns/min": turn_tensor.min().item(),
             })
+        if all_past_times:
+
+            valid_times = [x for group in all_past_times for row in group for x in row if x is not None]
+            frame_tensor = torch.tensor(valid_times, dtype=torch.float32)
+            metrics.update({
+                "dialogue/frames/mean": frame_tensor.mean().item(),
+                "dialogue/frames/max": frame_tensor.max().item(),
+                "dialogue/frames/min": frame_tensor.min().item(),
+            })
+
+
+
 
     return metrics
 

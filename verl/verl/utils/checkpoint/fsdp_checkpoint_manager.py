@@ -146,8 +146,15 @@ class FSDPCheckpointManager(BaseCheckpointManager):
                 print(f"[rank-{self.rank}]: Saving optim to {os.path.abspath(optim_path)}")
                 print(f"[rank-{self.rank}]: Saving extra_state to {os.path.abspath(extra_path)}")
                 torch.save(model_state_dict, model_path)
-                torch.save(optimizer_state_dict, optim_path)  # TODO: address optimizer is None
-                torch.save(extra_state_dict, extra_path)
+                if optimizer_state_dict is not None:
+                    os.makedirs(os.path.dirname(optim_path), exist_ok=True)
+                    torch.save(optimizer_state_dict, optim_path)
+                else:
+                    print(f"[Rank {self.rank}] Optimizer state is None. Skipping save for {optim_path}")
+
+                # torch.save(optimizer_state_dict, optim_path)  # TODO: address optimizer is None
+                if extra_state_dict is not None:
+                    torch.save(extra_state_dict, extra_path)
 
         if "hf_model" in self.checkpoint_contents:
             # wait for everyone to dump to local

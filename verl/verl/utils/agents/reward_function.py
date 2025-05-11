@@ -134,25 +134,28 @@ def compute_score(
     """
     solution_str = '<think>'+solution_str # since we use <think> to indicate the solution string in the generation prompt
     current_times = extra_info['times']
-    ground_truth_times = extra_info['times_GT']
+    ground_truth_times = extra_info.get('times_GT', [])
     current_times = convert_timestamps_to_set(current_times)
     ground_truth_times = convert_timestamps_to_set(ground_truth_times)
-    coverage_score = calculate_coverage(current_times, ground_truth_times)
-    
-
-
-    status, answer = extract_solution(solution_str, only_answer=False)
-    if status == 'format_error':
-        print(f"Format Error: {solution_str}")
-        return -1.0
-    
-    correct_score = 0.0
-    if extra_info['type'] == 'test' or extra_info['type'] == 'val':
-        correct_score = 1.0 if answer == ground_truth else 0.0
+    if len(ground_truth_times) == 0:
+        coverage_score = None
     else:
-        return 0.0
+        coverage_score = calculate_coverage(current_times, ground_truth_times)
     
-    final_score = 0.5 * coverage_score + 0.5 * correct_score
+    status, answer = extract_solution(solution_str, only_answer=False)
+    if status == 'valid_answer' or status == 'valid_frames':
+        format_score = 0.1
+    else:
+        format_score = 0.0
+
+    correct_score = 1.0 if answer == ground_truth else 0.0
+    if extra_info['type'] == 'test' or extra_info['type'] == 'val':
+        return correct_score
+    
+    if coverage_score:
+        final_score = 0.5 * coverage_score + 0.5 * correct_score
+    else:
+        final_score = correct_score
     # Add debug logging occasionally
     if random.randint(1, 64) == 1:
         print("--------------------------------")
@@ -168,4 +171,4 @@ def compute_score(
         print(f"Answer: {answer}")
         print("--------------------------------")
 
-    return final_score
+    return final_score + format_score
