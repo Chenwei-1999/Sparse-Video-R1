@@ -119,7 +119,7 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
         turn_list = []
         for info in batch.non_tensor_batch['extra_info']:
             if isinstance(info, dict):
-                turn = info.get("current_turn", 0)
+                turn = info.get("current_round", 1)
                 turn_list.append(turn)
         if turn_list:
             turn_tensor = torch.tensor(turn_list, dtype=torch.float32)

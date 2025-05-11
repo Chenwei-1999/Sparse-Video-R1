@@ -195,7 +195,7 @@ class LLMGenerationManager:
                 print(self.conversation_history[i])
                 print(rollings.non_tensor_batch["extra_info"][i])
                 print("="*20)
-            # Final assembly: ensure each DataProto carries its `extra_info`
+         # Final assembly: ensure each DataProto carries its `extra_info`
 
         final_outputs= DataProto.concat(final_outputs)
         final_outputs.non_tensor_batch["extra_info"] = rollings.non_tensor_batch["extra_info"]
@@ -234,7 +234,7 @@ class LLMGenerationManager:
                 )
                 rollings.non_tensor_batch["extra_info"][orig]["times"] = next_times[idx]
                 rollings.non_tensor_batch["extra_info"][orig]["past_times"][new_round-1] = next_times[idx]
-            rollings.non_tensor_batch["extra_info"][orig]["current_round"] = new_round
+            rollings.non_tensor_batch["extra_info"][orig]["current_round"] = new_round-1
 
             # Add any new images for next prompt
             images = [process_image({"image": fr["image"]}) for fr in sampled_frames[idx]]
