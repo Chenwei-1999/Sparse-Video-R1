@@ -152,8 +152,9 @@ def compute_score(
     if extra_info['type'] == 'test' or extra_info['type'] == 'val':
         return correct_score
     
+ 
     if coverage_score:
-        final_score = 0.5 * coverage_score + 0.5 * correct_score
+        final_score = correct_score if correct_score == 1.0 else coverage_score
     else:
         final_score = correct_score
     # Add debug logging occasionally
@@ -169,6 +170,6 @@ def compute_score(
         print(f"Ground Truth: {ground_truth}")
         print(f"Status: {status}")
         print(f"Answer: {answer}")
-        print("--------------------------------")
+        print("-----------------------------s---")
 
     return final_score + format_score
